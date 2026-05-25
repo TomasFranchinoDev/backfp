@@ -60,7 +60,7 @@ CSRF_COOKIE_HTTPONLY = False   # Debe ser False para que Axios pueda leerlo y ma
 SESSION_COOKIE_SECURE = True#os.getenv('SESSION_COOKIE_SECURE', 'False').lower() == 'true'  # En producción, cambiar a True para que solo se envíe por HTTPS
 CSRF_COOKIE_SECURE = True#os.getenv('CSRF_COOKIE_SECURE', 'False').lower() == 'true'     # En producción, cambiar a True para que solo se
 SECURE_SSL_REDIRECT = True#os.getenv('SECURE_SSL_REDIRECT', 'False').lower() == 'true'  # En producción, cambiar a True para redirigir HTTP a HTTPS
-
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_ORIGINS').split(',')  #VA FRONT Leer desde .env y convertir a lista
 # Le indicamos a Django que use nuestro Custom User
