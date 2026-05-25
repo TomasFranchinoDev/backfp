@@ -25,6 +25,15 @@ def _get_csv_env(name: str, default: str = '') -> list[str]:
     return [item.strip() for item in value.split(',') if item.strip()]
 
 
+def _get_secure_env(name: str) -> bool:
+    value = os.getenv(name)
+
+    if value is None:
+        return not DEBUG
+
+    return value.strip().lower() == 'true'
+
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -65,11 +74,11 @@ CSRF_COOKIE_HTTPONLY = False   # Debe ser False para que Axios pueda leerlo y ma
 
 
 
-SESSION_COOKIE_SECURE = _get_bool_env('SESSION_COOKIE_SECURE')  # En producción, cambiar a True para que solo se envíe por HTTPS
-CSRF_COOKIE_SECURE = _get_bool_env('CSRF_COOKIE_SECURE')     # En producción, cambiar a True para que solo se
-SECURE_SSL_REDIRECT = _get_bool_env('SECURE_SSL_REDIRECT')  # En producción, cambiar a True para redirigir HTTP a HTTPS
+SESSION_COOKIE_SECURE = _get_secure_env('SESSION_COOKIE_SECURE')  # En producción, True por defecto
+CSRF_COOKIE_SECURE = _get_secure_env('CSRF_COOKIE_SECURE')     # En producción, True por defecto
+SECURE_SSL_REDIRECT = _get_secure_env('SECURE_SSL_REDIRECT')  # En producción, True por defecto
 
-CSRF_TRUSTED_ORIGINS = _get_csv_env('CSRF_ORIGINS')  # URL del frontend y orígenes de confianza
+CSRF_TRUSTED_ORIGINS = _get_csv_env('CSRF_ORIGINS') or CORS_ALLOWED_ORIGINS  # URL del frontend y orígenes de confianza
 # Le indicamos a Django que use nuestro Custom User
 AUTH_USER_MODEL = 'usuarios.Usuario'
 
