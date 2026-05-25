@@ -16,6 +16,15 @@ import os
 from corsheaders.defaults import default_headers
 
 
+def _get_bool_env(name: str, default: str = 'False') -> bool:
+    return os.getenv(name, default).strip().lower() == 'true'
+
+
+def _get_csv_env(name: str, default: str = '') -> list[str]:
+    value = os.getenv(name, default)
+    return [item.strip() for item in value.split(',') if item.strip()]
+
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -29,11 +38,10 @@ load_dotenv()
 SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG') # Cambiar a False en producción
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS').split(',')  # Permitir todas las IPs (solo para desarrollo, en producción especificar dominios)
- # Permitir todas las IPs (solo para desarrollo, en producción especificar dominios)
-CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').lower() == 'true'  # Leer desde .env y convertir a booleano
-CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS').split(',')  #VA FRONT Leer desde .env y convertir a lista URL FRONTEND
+DEBUG = _get_bool_env('DEBUG')  # Cambiar a False en producción
+ALLOWED_HOSTS = _get_csv_env('ALLOWED_HOSTS')  # En producción especificar dominios
+CORS_ALLOW_ALL_ORIGINS = _get_bool_env('CORS_ALLOW_ALL_ORIGINS')
+CORS_ALLOWED_ORIGINS = _get_csv_env('CORS_ALLOWED_ORIGINS')  # URL del frontend
 
 CORS_ALLOW_HEADERS = list(default_headers) + [
     'x-skip-toast',
@@ -57,11 +65,11 @@ CSRF_COOKIE_HTTPONLY = False   # Debe ser False para que Axios pueda leerlo y ma
 
 
 
-SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'False').lower() == 'true'  # En producción, cambiar a True para que solo se envíe por HTTPS
-CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', 'False').lower() == 'true'     # En producción, cambiar a True para que solo se
-SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'False').lower() == 'true'  # En producción, cambiar a True para redirigir HTTP a HTTPS
+SESSION_COOKIE_SECURE = _get_bool_env('SESSION_COOKIE_SECURE')  # En producción, cambiar a True para que solo se envíe por HTTPS
+CSRF_COOKIE_SECURE = _get_bool_env('CSRF_COOKIE_SECURE')     # En producción, cambiar a True para que solo se
+SECURE_SSL_REDIRECT = _get_bool_env('SECURE_SSL_REDIRECT')  # En producción, cambiar a True para redirigir HTTP a HTTPS
 
-CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_ORIGINS').split(',')  #VA FRONT Leer desde .env y convertir a lista
+CSRF_TRUSTED_ORIGINS = _get_csv_env('CSRF_ORIGINS')  # URL del frontend y orígenes de confianza
 # Le indicamos a Django que use nuestro Custom User
 AUTH_USER_MODEL = 'usuarios.Usuario'
 
