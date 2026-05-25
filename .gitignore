@@ -1,0 +1,60 @@
+# ==========================================
+# Entorno Virtual (Python)
+# ==========================================
+.venv/
+venv/
+env/
+ENV/
+bin/
+lib/
+include/
+share/
+pip-selfcheck.json
+
+# ==========================================
+# Caché de Python y Compilados
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ==========================================
+# Configuración Local y Secretos (VITAL)
+# ==========================================
+.env
+*.env
+local_settings.py
+secrets.json
+.vsc/
+
+# ==========================================
+# Base de Datos Local de Prueba (si usás SQLite local)
+# ==========================================
+*.sqlite3
+*.db
+
+# ==========================================
+# Archivos del Sistema Operativo y Editores
+# ==========================================
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# Archivos Cargados por Usuarios (Media / Excels)
+# ==========================================
+media/
+static_root/
+staticfiles/
+*.xlsx
+*.csv
+!Plantilla_Importacion_Completa_SIU.xlsx  # (Opcional: Exclamación si SÍ querés conservar la plantilla de guía en el repo)
