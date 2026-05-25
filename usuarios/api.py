@@ -1,7 +1,6 @@
 from ninja import Router
 from django.contrib.auth import authenticate, login, logout
 from django.http import HttpRequest
-from django.views.decorators.csrf import ensure_csrf_cookie
 from core.security import secretario_auth
 from usuarios.models import Secretario
 from .schemas import LoginIn, UsuarioOut, MensajeOut
@@ -21,12 +20,6 @@ def _ok(mensaje: str) -> dict:
 
 def _err(mensaje: str) -> dict:
     return {"success": False, "mensaje": mensaje}
-
-
-@router.get("/csrf", response={200: MensajeOut})
-@ensure_csrf_cookie
-def api_csrf(request: HttpRequest):
-    return 200, _ok("CSRF cookie establecida")
 
 @router.post("/login", response={200: UsuarioOut, 401: MensajeOut})
 def api_login(request: HttpRequest, payload: LoginIn):
