@@ -40,7 +40,8 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 ]
 
 # --- CONFIGURACIÓN DE SESIONES Y COOKIES ---
-
+SESSION_COOKIE_SAMESITE = 'None'
+CSRF_COOKIE_SAMESITE = 'None'
 # 1. Duración de la sesión (ej. 6 meses en segundos)
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 180  
 
