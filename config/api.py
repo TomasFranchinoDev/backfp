@@ -7,6 +7,7 @@ from asistencia.api import router as asistencia_router
 from importacion.api import router as importacion_router
 from configuracion.api import router as configuracion_router
 from reportes.api import router as reportes_router
+from core.csrf_endpoint import router as csrf_router
 # Inicializamos la API global
 api = NinjaAPI(
     title="API - Control de Asistencia ICES",
@@ -14,6 +15,7 @@ api = NinjaAPI(
     description="Backend oficial para el fichaje docente."
 )
 # Registramos los módulos
+api.add_router("/csrf/", csrf_router)
 api.add_router("/auth/", usuarios_router)
 api.add_router("/academico/", academico_router)
 api.add_router("/asignaciones/", asignaciones_router) 
