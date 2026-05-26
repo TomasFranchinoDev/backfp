@@ -12,7 +12,7 @@ router = Router(tags=["Importación SIU"], auth=secretario_auth)
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 logger = logging.getLogger(__name__)
 
-@router.post("/siu", response={200: ResumenImportacionOut, 400: dict})
+@router.post("/siu", response={200: ResumenImportacionOut, 400: dict, 500: dict})
 def subir_archivo_siu(request, file: UploadedFile = File(...)):
     """
     Recibe un archivo Excel (.xlsx) exportado del SIU y lo procesa para poblar la base de datos
@@ -26,6 +26,7 @@ def subir_archivo_siu(request, file: UploadedFile = File(...)):
         return 400, {"success": False, "mensaje": "Archivo demasiado grande (máx 5MB)"}
     # Procesar el archivo pasándole el objeto en memoria y el usuario logueado
     try:
+        file.file.seek(0)  # Asegurarse de que el puntero del archivo esté al inicio
         resultados = procesar_archivo_siu(file.file, request.user)
         return 200, resultados
     except ImportacionDataError as e:

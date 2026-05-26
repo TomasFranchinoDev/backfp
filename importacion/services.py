@@ -83,13 +83,17 @@ def procesar_archivo_siu(archivo, usuario_creador):
         raise ValueError(f"No se encontró la pestaña con el prefijo '{prefix}'")
 
     # Buscar pestañas
-    carreras_name, df_carreras = find_sheet_df("01")
-    docentes_name, df_docentes = find_sheet_df("05")
-    materias_name, df_materias = find_sheet_df("02")
-    materia_carrera_name, df_materia_carrera = find_sheet_df("03")
-    horarios_name, df_horarios = find_sheet_df("04")
-    asignaciones_name, df_asignaciones = find_sheet_df("06")
-
+    try:
+        carreras_name, df_carreras = find_sheet_df("01")
+        docentes_name, df_docentes = find_sheet_df("05")
+        materias_name, df_materias = find_sheet_df("02")
+        materia_carrera_name, df_materia_carrera = find_sheet_df("03")
+        horarios_name, df_horarios = find_sheet_df("04")
+        asignaciones_name, df_asignaciones = find_sheet_df("06")
+    except ValueError as e:
+        # Esto convertirá el error de pestaña faltante en un error 400 controlado
+        raise ImportacionDataError(str(e))
+    
     resumen = {
         "success": False,
         "carreras_creadas": 0,
