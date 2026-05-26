@@ -40,8 +40,9 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 ]
 
 # --- CONFIGURACIÓN DE SESIONES Y COOKIES ---
-SESSION_COOKIE_SAMESITE = 'None'
-CSRF_COOKIE_SAMESITE = 'None'
+# Same-origin: Lax es el valor seguro por defecto, compatible con iOS Safari
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
 # 1. Duración de la sesión (ej. 6 meses en segundos)
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 180  
 
@@ -189,6 +190,14 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STATICFILES_DIRS = [
+    BASE_DIR / 'dist',
+]
+# WhiteNoise: servir archivos del frontend build (dist/) en la raíz URL
+# Esto permite que /assets/index-xxx.js, /favicon.svg, etc. se sirvan directamente
+WHITENOISE_ROOT = os.path.join(BASE_DIR, 'dist')
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
