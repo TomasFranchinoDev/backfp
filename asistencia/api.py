@@ -60,7 +60,7 @@ def verificar_estado_actual(request):
     if registro_activo:
         response["tiene_entrada_activa"] = True
         response["materia_actual"] = registro_activo.slot_horario.materia.nombre
-        response["hora_entrada"] = registro_activo.hora_entrada.strftime("%H:%M")
+        response["hora_entrada"] = timezone.localtime(registro_activo.hora_entrada).strftime("%H:%M")
     else:
         # 1. Si no hay entrada activa, buscar clase vigente
         slot_vigente = obtener_materia_vigente_para_escaneo(

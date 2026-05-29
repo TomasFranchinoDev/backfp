@@ -129,6 +129,8 @@ def procesar_archivo_siu(archivo, usuario_creador):
                         raise ValueError("El campo 'nombre' es obligatorio")
                     if duracion_anios is None:
                         raise ValueError("El campo 'duracion_anios' es obligatorio")
+                    if duracion_anios < 0:
+                        raise ValueError("El campo 'duracion_anios' no puede ser negativo")
                     
                     carrera, created = Carrera.objects.update_or_create(
                         codigo=codigo,

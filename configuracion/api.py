@@ -37,6 +37,12 @@ def actualizar_configuracion(request, payload: ConfiguracionUpdateIn):
         if datos['metodo_validacion_ubicacion'] not in valores_validos:
             return 400, {"success": False, "mensaje": "Método de validación de ubicación inválido."}
 
+    metodo = datos.get('metodo_validacion_ubicacion', config.metodo_validacion_ubicacion)
+    wifi_name = datos.get('red_wifi_campus', config.red_wifi_campus)
+
+    if metodo in ['gps_o_wifi', 'solo_wifi', 'solo_gps'] and not (wifi_name and wifi_name.strip()):
+        return 400, {"success": False, "mensaje": "Debe especificar el nombre de la red WiFi del campus para este método de validación."}
+
     for attr, value in datos.items():
         setattr(config, attr, value)
 
