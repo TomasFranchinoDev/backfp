@@ -45,6 +45,7 @@ SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
 # 1. Duración de la sesión (ej. 6 meses en segundos)
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 180  
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 
 # 2. Renovar la cookie cada vez que interactúan con la API (mantiene la sesión viva)
 SESSION_SAVE_EVERY_REQUEST = True 
