@@ -57,6 +57,14 @@ def crear_materia(request, payload: MateriaIn):
     materia = obtener_materia_con_carreras(materia.id)
     return 201, materia_to_out(materia)
 
+@router.get("/materias/{materia_id}", response={200: MateriaOut, 404: MensajeOut})
+def obtener_materia(request, materia_id: int):
+    """Obtiene el detalle de una materia por su ID."""
+    materia = obtener_materia_con_carreras(materia_id)
+    if not materia:
+        return 404, {"success": False, "mensaje": "Materia no encontrada"}
+    return 200, materia_to_out(materia)
+
 @router.put("/materias/{materia_id}", response={200: MateriaOut, 400: MensajeOut})
 def actualizar_materia(request, materia_id: int, payload: MateriaIn):
     """Actualiza una materia existente y sincroniza sus carreras."""
