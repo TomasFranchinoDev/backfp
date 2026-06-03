@@ -92,8 +92,9 @@ def registrar_entrada(usuario, lat: float, lon: float, ip: str, tipo_clase: str)
             # CASO A: EL PROFESOR QUE ESTÁ USANDO LA APP
             # =======================================================
             if registro_existente:
-                if registro_existente.creado_por == usuario:
-                    # Él mismo se había fichado antes -> Bloquear por duplicado
+                ya_se_ficho = (registro_existente.creado_por == usuario) or (registro_existente.modificado_por == usuario)
+                if ya_se_ficho:
+                    # Él mismo se había fichado antes o ya hizo sinceridad -> Bloquear por duplicado
                     return {
                         "success": False,
                         "estado_flujo": "duplicado",

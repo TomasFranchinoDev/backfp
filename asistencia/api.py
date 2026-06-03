@@ -57,12 +57,18 @@ def verificar_estado_actual(request):
         "metodo_validacion": None
     }
 
+    # Determinamos si el profesor actual ya registró él mismo la entrada
+    # o si ya hizo su "sinceridad horaria" actualizando un registro solidario.
+    ya_se_ficho = False
     if registro_activo:
+        ya_se_ficho = (registro_activo.creado_por == request.user) or (registro_activo.modificado_por == request.user)
+
+    if registro_activo and ya_se_ficho:
         response["tiene_entrada_activa"] = True
         response["materia_actual"] = registro_activo.slot_horario.materia.nombre
         response["hora_entrada"] = timezone.localtime(registro_activo.hora_entrada).strftime("%H:%M")
     else:
-        # 1. Si no hay entrada activa, buscar clase vigente
+        # 1. Si no hay entrada activa (o el registro no es "mío" aún), buscar clase vigente
         slot_vigente = obtener_materia_vigente_para_escaneo(
             docente_id=docente_id,
             fecha_actual=ahora.date(),
