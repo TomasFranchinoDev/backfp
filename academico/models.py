@@ -32,8 +32,12 @@ class MateriaCarrera(AuditoriaModel):
     class Meta:
         unique_together = ('materia', 'carrera')
 
+from django.utils import timezone
+
 class SlotHorario(AuditoriaModel):
     materia = models.ForeignKey(Materia, on_delete=models.CASCADE, related_name='slots')
     dia_semana = models.IntegerField(choices=DiaSemana.choices)
     hora_inicio = models.TimeField()
     hora_fin = models.TimeField()
+    valido_desde = models.DateField(default=timezone.now)
+    valido_hasta = models.DateField(null=True, blank=True)

@@ -48,7 +48,10 @@ def obtener_materia_vigente_para_escaneo(docente_id: int, fecha_actual: date, ho
 
     slots_del_dia = SlotHorario.objects.filter(
         materia_id__in=materias_ids,
-        dia_semana=dia_semana_actual
+        dia_semana=dia_semana_actual,
+        valido_desde__lte=fecha_actual
+    ).filter(
+        Q(valido_hasta__isnull=True) | Q(valido_hasta__gte=fecha_actual)
     ).exclude(id__in=slots_ya_fichados).select_related('materia').order_by('hora_inicio')
     
     # 4. Encontrar el slot que coincida con la hora actual (con tolerancia)
@@ -101,7 +104,10 @@ def obtener_proxima_clase_hoy(docente_id: int, fecha_actual: date, hora_actual: 
 
     slots_del_dia = SlotHorario.objects.filter(
         materia_id__in=materias_ids,
-        dia_semana=dia_semana_actual
+        dia_semana=dia_semana_actual,
+        valido_desde__lte=fecha_actual
+    ).filter(
+        Q(valido_hasta__isnull=True) | Q(valido_hasta__gte=fecha_actual)
     ).exclude(id__in=slots_ya_fichados).select_related('materia').order_by('hora_inicio')
 
     # Retornar el primer slot cuya hora de inicio es posterior a la hora actual

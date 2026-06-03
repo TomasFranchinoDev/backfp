@@ -335,15 +335,25 @@ def procesar_archivo_siu(archivo, usuario_creador):
                     if not materia:
                         raise ValueError(f"Materia con codigo_siu '{codigo_materia}' no existe")
                     
-                    slot, created = SlotHorario.objects.get_or_create(
+                    slot = SlotHorario.objects.filter(
                         materia=materia,
                         dia_semana=dia_semana,
                         hora_inicio=hora_inicio,
                         hora_fin=hora_fin,
-                        defaults={
-                            'creado_por': usuario_creador
-                        }
-                    )
+                        valido_hasta__isnull=True
+                    ).first()
+                    
+                    if not slot:
+                        slot = SlotHorario.objects.create(
+                            materia=materia,
+                            dia_semana=dia_semana,
+                            hora_inicio=hora_inicio,
+                            hora_fin=hora_fin,
+                            creado_por=usuario_creador
+                        )
+                        created = True
+                    else:
+                        created = False
                     if created:
                         resumen["horarios_creados"] += 1
             except (ValueError, IntegrityError) as e:

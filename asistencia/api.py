@@ -3,6 +3,7 @@ from typing import Optional
 from ninja import Router
 from core.security import docente_auth
 from django.utils import timezone
+from django.db.models import Q
 from .schemas import FichajeEntradaIn, FichajeOut, FichajeRichOut, EstadoFichajeOut, MateriaStatsOut
 from .services import declarar_clase_asincronica, registrar_entrada, registrar_salida
 from .models import RegistroAsistencia
@@ -205,9 +206,11 @@ def listar_clases_del_dia(request, fecha: Optional[date] = None):
     # Buscamos las materias que dicta
     materias_ids = obtener_asignaciones_docente_vigentes(docente_id, target_date).values_list('materia_id', flat=True)
     
-    # Filtramos los slots de esas materias que caen exactamente hoy
+    # Filtramos los slots de esas materias que caen exactamente hoy y son válidos
     slots_hoy = SlotHorario.objects.filter(
-        materia_id__in=materias_ids, dia_semana=dia_semana_actual
+        materia_id__in=materias_ids, dia_semana=dia_semana_actual, valido_desde__lte=target_date
+    ).filter(
+        Q(valido_hasta__isnull=True) | Q(valido_hasta__gte=target_date)
     ).select_related('materia').prefetch_related('materia__carreras_asociadas__carrera')
     
     # Formateamos para el frontend
@@ -268,12 +271,13 @@ def obtener_mis_materias_stats(request):
         materia = asig.materia
         slots = list(SlotHorario.objects.filter(materia=materia))
         
-        # Formatear días de cursada
+        # Formatear días de cursada (solo los horarios vigentes actualmente)
         dias_cursada = []
         for slot in slots:
-            dias_cursada.append(
-                f"{slot.get_dia_semana_display()} {slot.hora_inicio.strftime('%H:%M')} - {slot.hora_fin.strftime('%H:%M')}"
-            )
+            if slot.valido_hasta is None:
+                dias_cursada.append(
+                    f"{slot.get_dia_semana_display()} {slot.hora_inicio.strftime('%H:%M')} - {slot.hora_fin.strftime('%H:%M')}"
+                )
             
         fecha_inicio = asig.fecha_inicio
         fecha_fin = asig.fecha_fin
@@ -310,9 +314,12 @@ def obtener_mis_materias_stats(request):
         while curr_date <= hasta_fecha:
             evento_calendario = obtener_evento_bloqueo(curr_date)
                 
-            # 1. Verificar si hay slots en este día de la semana
+            # 1. Verificar si hay slots en este día de la semana que sean válidos en esta fecha histórica
             dia_semana_val = curr_date.weekday()
-            slots_hoy = [s for s in slots if s.dia_semana == dia_semana_val]
+            slots_hoy = [
+                s for s in slots 
+                if s.dia_semana == dia_semana_val and s.valido_desde <= curr_date and (s.valido_hasta is None or s.valido_hasta >= curr_date)
+            ]
             
             for slot in slots_hoy:
                 reg = registro_map.get((slot.id, curr_date))

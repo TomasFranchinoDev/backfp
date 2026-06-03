@@ -2,6 +2,8 @@ from ninja import Router
 from django.shortcuts import get_object_or_404
 from typing import List
 from core.security import secretario_auth
+from django.db import transaction
+from django.utils import timezone
 
 from .models import Carrera, Materia, SlotHorario
 from asignaciones.models import AsignacionDocente
@@ -98,15 +100,15 @@ def borrar_materia(request, materia_id: int):
 # ==========================================
 @router.get("/slots", response=List[SlotHorarioOut])
 def listar_slots(request):
-    """Lista todos los bloques horarios del catálogo académico."""
-    return SlotHorario.objects.select_related('materia').order_by(
+    """Lista todos los bloques horarios actuales del catálogo académico."""
+    return SlotHorario.objects.filter(valido_hasta__isnull=True).select_related('materia').order_by(
         'materia__nombre', 'dia_semana', 'hora_inicio'
     )
 
 @router.get("/materias/{materia_id}/slots", response=List[SlotHorarioOut])
 def listar_slots_por_materia(request, materia_id: int):
-    """Obtiene los horarios asignados a una materia específica."""
-    return SlotHorario.objects.filter(materia_id=materia_id)
+    """Obtiene los horarios actuales asignados a una materia específica."""
+    return SlotHorario.objects.filter(materia_id=materia_id, valido_hasta__isnull=True)
 
 @router.post("/slots", response={201: SlotHorarioOut})
 def crear_slot(request, payload: SlotHorarioIn):
@@ -121,22 +123,35 @@ def crear_slot(request, payload: SlotHorarioIn):
 # ==========================================
 @router.put("/slots/{slot_id}", response={200: SlotHorarioOut, 404: MensajeOut})
 def actualizar_slot(request, slot_id: int, payload: SlotHorarioIn):
-    """Actualiza un bloque horario existente."""
-    slot = get_object_or_404(SlotHorario, id=slot_id)
-    materia = get_object_or_404(Materia, id=payload.materia_id)
-    datos = payload.dict(exclude={'materia_id'})
-    for attr, value in datos.items():
-        setattr(slot, attr, value)
-    slot.materia = materia
-    slot.modificado_por = request.user
-    slot.save()
-    return 200, slot
+    """Actualiza un bloque horario existente (versionándolo)."""
+    with transaction.atomic():
+        slot_viejo = get_object_or_404(SlotHorario, id=slot_id)
+        materia = get_object_or_404(Materia, id=payload.materia_id)
+        
+        hoy = timezone.localdate()
+        
+        # Cerramos el slot viejo
+        slot_viejo.valido_hasta = hoy - timezone.timedelta(days=1)
+        slot_viejo.modificado_por = request.user
+        slot_viejo.save()
+        
+        # Creamos el slot nuevo con los datos actualizados
+        datos = payload.dict(exclude={'materia_id'})
+        slot_nuevo = SlotHorario.objects.create(
+            materia=materia,
+            valido_desde=hoy,
+            creado_por=request.user,
+            **datos
+        )
+    return 200, slot_nuevo
 
 @router.delete("/slots/{slot_id}", response={200: MensajeOut})
 def borrar_slot(request, slot_id: int):
-    """Elimina un bloque horario."""
+    """Elimina lógicamente un bloque horario."""
     slot = get_object_or_404(SlotHorario, id=slot_id)
-    slot.delete()
+    slot.valido_hasta = timezone.localdate()
+    slot.modificado_por = request.user
+    slot.save()
     return 200, {"success": True, "mensaje": "Slot eliminado correctamente"}
 
 
@@ -179,5 +194,5 @@ def borrar_carrera(request, carrera_id: int):
 # ==========================================
 @router.get("/carreras/{carrera_id}/slots", response=List[SlotHorarioOut])
 def listar_slots_por_carrera(request, carrera_id: int):
-    """Lista los slots horarios asociados a las materias de una carrera."""
-    return SlotHorario.objects.filter(materia__carreras_asociadas__carrera_id=carrera_id).distinct()
+    """Lista los slots horarios actuales asociados a las materias de una carrera."""
+    return SlotHorario.objects.filter(materia__carreras_asociadas__carrera_id=carrera_id, valido_hasta__isnull=True).distinct()

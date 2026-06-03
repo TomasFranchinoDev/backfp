@@ -10,6 +10,7 @@ from usuarios.schemas import UsuarioRegistroIn, UsuarioUpdateIn, DocenteOut, Sec
 from core.security import secretario_auth
 from django.shortcuts import get_object_or_404
 from typing import List
+from django.db.models import Q
 
 router = Router(tags=["Autenticación"])
 
@@ -240,7 +241,12 @@ def obtener_dashboard_stats(request):
     
     hoy = timezone.localdate()
     dia_semana_actual = hoy.weekday()
-    clases_hoy = SlotHorario.objects.filter(dia_semana=dia_semana_actual).count()
+    clases_hoy = SlotHorario.objects.filter(
+        dia_semana=dia_semana_actual,
+        valido_desde__lte=hoy
+    ).filter(
+        Q(valido_hasta__isnull=True) | Q(valido_hasta__gte=hoy)
+    ).count()
     
     asistencias_activas = RegistroAsistencia.objects.filter(
         fecha=hoy,

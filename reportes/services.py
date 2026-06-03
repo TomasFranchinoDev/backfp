@@ -81,8 +81,11 @@ def calcular_ausencias_dinamicas(mes: int, anio: int, institucion: str = None, a
             materia_codigo = asignacion.materia.codigo_siu
             carreras_asoc = list(asignacion.materia.carreras_asociadas.all())
 
-            # Revisar si hay clases programadas para este día de la semana
-            slots_hoy = [s for s in slots_por_materia[materia_id] if s.dia_semana == dia_semana_actual]
+            # Revisar si hay clases programadas para este día de la semana, vigentes en la fecha actual
+            slots_hoy = [
+                s for s in slots_por_materia[materia_id] 
+                if s.dia_semana == dia_semana_actual and s.valido_desde <= fecha_actual and (s.valido_hasta is None or s.valido_hasta >= fecha_actual)
+            ]
 
             for slot in slots_hoy:
                 asistio = (docente_id, slot.id, fecha_actual) in mapa_asistencia

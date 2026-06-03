@@ -276,7 +276,10 @@ def resolver_emergencia(solicitud_id: int, aprobar: bool, nota_secretaria: str, 
             
             slots_to_process = list(SlotHorario.objects.filter(
                 materia_id__in=materias_ids,
-                dia_semana=dia_semana_val
+                dia_semana=dia_semana_val,
+                valido_desde__lte=solicitud.fecha
+            ).filter(
+                Q(valido_hasta__isnull=True) | Q(valido_hasta__gte=solicitud.fecha)
             ))
 
         for slot in slots_to_process:
@@ -328,6 +331,9 @@ def declarar_clase_asincronica(docente_id: int, slot_id: int, fecha_dictado: dat
     slot = SlotHorario.objects.filter(id=slot_id).select_related('materia').first()
     if not slot:
         return False, "El horario seleccionado no existe."
+
+    if slot.valido_desde > fecha_dictado or (slot.valido_hasta and slot.valido_hasta < fecha_dictado):
+        return False, "El horario seleccionado no era válido en esa fecha."
 
     if slot.dia_semana != fecha_dictado.weekday():
         return False, "El día de la semana seleccionado no coincide con la cursada oficial de la materia."
