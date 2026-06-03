@@ -131,7 +131,7 @@ def actualizar_slot(request, slot_id: int, payload: SlotHorarioIn):
         hoy = timezone.localdate()
         
         # Cerramos el slot viejo
-        slot_viejo.valido_hasta = hoy - timezone.timedelta(days=1)
+        slot_viejo.valido_hasta = hoy
         slot_viejo.modificado_por = request.user
         slot_viejo.save()
         
@@ -139,7 +139,7 @@ def actualizar_slot(request, slot_id: int, payload: SlotHorarioIn):
         datos = payload.dict(exclude={'materia_id'})
         slot_nuevo = SlotHorario.objects.create(
             materia=materia,
-            valido_desde=hoy,
+            valido_desde=hoy + timezone.timedelta(days=1),
             creado_por=request.user,
             **datos
         )
