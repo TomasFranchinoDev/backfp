@@ -11,6 +11,8 @@ from configuracion.models import Configuracion
 from core.constants import EstadoSolicitud, TipoClase
 from .models import SolicitudEmergencia, RegistroAsistencia
 from academico.models import SlotHorario
+from asignaciones.models import AsignacionDocente
+from django.db import transaction
 
 
 def _derivar_estado_flujo_ubicacion(resultado) -> str:
@@ -24,16 +26,17 @@ def _derivar_estado_flujo_ubicacion(resultado) -> str:
     return "error_ubicacion"  # fallback genérico
 
 
-def registrar_entrada(docente_id: int, lat: float, lon: float, ip: str, tipo_clase: str) -> dict:
+@transaction.atomic
+def registrar_entrada(usuario, lat: float, lon: float, ip: str, tipo_clase: str) -> dict:
     """
-    Procesa un escaneo de ENTRADA. Valida horario y ubicación.
-    Retorna un dict compatible con FichajeRichOut.
+    Procesa un escaneo de ENTRADA con soporte para Fichaje Solidario y Sinceridad Horaria.
     """
     ahora = timezone.localtime()
+    docente_accion = usuario.docente # El profesor que hizo clic
     
     # 1. Obtener la clase actual del docente (Valida el margen horario)
     slot_vigente = obtener_materia_vigente_para_escaneo(
-        docente_id=docente_id, 
+        docente_id=docente_accion.id, 
         fecha_actual=ahora.date(), 
         hora_actual=ahora.time()
     )
@@ -47,26 +50,8 @@ def registrar_entrada(docente_id: int, lat: float, lon: float, ip: str, tipo_cla
 
     materia_nombre = slot_vigente.materia.nombre
 
-    # 2. Validar que no haya fichado entrada ya
-    registro_existente = RegistroAsistencia.objects.filter(
-        docente_id=docente_id,
-        slot_horario=slot_vigente,
-        fecha=ahora.date()
-    ).first()
-
-    if registro_existente:
-        return {
-            "success": False,
-            "estado_flujo": "duplicado",
-            "materia": materia_nombre,
-            "mensaje": "Ya registraste tu entrada para esta clase hoy.",
-        }
-
-    # 3. Validar ubicación (Solo si es clase presencial)
-    gps_ok = None
-    wifi_ok = None
-    ubicacion_ok = None
-
+    # 2. Validar ubicación SOLO para el profesor que tiene el celular en la mano
+    gps_ok, wifi_ok, ubicacion_ok = None, None, None
     if tipo_clase == TipoClase.PRESENCIAL:
         config = Configuracion.objects.first() or Configuracion.objects.create(id=1)
         resultado_ubicacion = validar_ubicacion(lat, lon, ip, config)
@@ -85,31 +70,95 @@ def registrar_entrada(docente_id: int, lat: float, lon: float, ip: str, tipo_cla
             }
         ubicacion_ok = True
 
-    # 4. Registrar en la base de datos
-    RegistroAsistencia.objects.create(
-        docente_id=docente_id,
-        slot_horario=slot_vigente,
-        fecha=ahora.date(),
-        anio=ahora.year,
-        tipo_clase=tipo_clase,
-        hora_entrada=ahora,
-        ubicacion_validada=ubicacion_ok,
-        latitud_registrada=lat,
-        longitud_registrada=lon,
-        ip_registrada=ip
-    )
+    # 3. Flujo de Fichaje Solidario
+    # Buscamos a TODOS los docentes asignados a esta materia que estén activos
+    asignaciones = AsignacionDocente.objects.filter(materia=slot_vigente.materia, activa=True)
+    
+    estado_final_flujo = "exito"
+    mensaje_final = f"Entrada registrada exitosamente para {materia_nombre}."
+
+    for asignacion in asignaciones:
+        docente_asignado = asignacion.docente
+        
+        # Buscar si ya existe un registro hoy para este docente en este slot
+        registro_existente = RegistroAsistencia.objects.filter(
+            docente=docente_asignado,
+            slot_horario=slot_vigente,
+            fecha=ahora.date()
+        ).first()
+
+        if docente_asignado == docente_accion:
+            # =======================================================
+            # CASO A: EL PROFESOR QUE ESTÁ USANDO LA APP
+            # =======================================================
+            if registro_existente:
+                if registro_existente.creado_por == usuario:
+                    # Él mismo se había fichado antes -> Bloquear por duplicado
+                    return {
+                        "success": False,
+                        "estado_flujo": "duplicado",
+                        "materia": materia_nombre,
+                        "mensaje": "Ya registraste tu entrada para esta clase hoy.",
+                    }
+                else:
+                    # Un compañero lo fichó antes -> SINCERIDAD HORARIA (Actualizar)
+                    registro_existente.hora_entrada = ahora
+                    registro_existente.modificado_por = usuario
+                    # Le inyectamos la ubicación real que acaba de validar
+                    registro_existente.ubicacion_validada = ubicacion_ok
+                    registro_existente.latitud_registrada = lat
+                    registro_existente.longitud_registrada = lon
+                    registro_existente.ip_registrada = ip
+                    registro_existente.save()
+                    
+                    estado_final_flujo = "horario_actualizado"
+                    mensaje_final = f"Horario de entrada actualizado a las {ahora.strftime('%H:%M')}."
+            else:
+                # No existe registro -> Crear el suyo normalmente
+                RegistroAsistencia.objects.create(
+                    docente=docente_accion,
+                    slot_horario=slot_vigente,
+                    fecha=ahora.date(),
+                    anio=ahora.year,
+                    tipo_clase=tipo_clase,
+                    hora_entrada=ahora,
+                    ubicacion_validada=ubicacion_ok,
+                    latitud_registrada=lat,
+                    longitud_registrada=lon,
+                    ip_registrada=ip,
+                    creado_por=usuario # La firma de autoría
+                )
+        else:
+            # =======================================================
+            # CASO B: EL COMPAÑERO (Fichaje Solidario)
+            # =======================================================
+            if not registro_existente:
+                # Se le crea el registro, pero con GPS/IP nulos (como solicitaste)
+                RegistroAsistencia.objects.create(
+                    docente=docente_asignado,
+                    slot_horario=slot_vigente,
+                    fecha=ahora.date(),
+                    anio=ahora.year,
+                    tipo_clase=tipo_clase,
+                    hora_entrada=ahora,
+                    ubicacion_validada=None,
+                    latitud_registrada=None,
+                    longitud_registrada=None,
+                    ip_registrada=None,
+                    creado_por=usuario # Firma de que lo creó el otro profesor
+                )
+            # Si el compañero ya tenía registro, no hacemos nada.
 
     return {
         "success": True,
-        "estado_flujo": "exito",
+        "estado_flujo": estado_final_flujo,
         "gps_ok": gps_ok,
         "wifi_ok": wifi_ok,
         "materia": materia_nombre,
         "hora_fichada": ahora.strftime("%H:%M"),
         "tipo_clase": tipo_clase,
-        "mensaje": f"Entrada registrada exitosamente para {materia_nombre}.",
+        "mensaje": mensaje_final,
     }
-
 
 def registrar_salida(docente_id: int, lat: float, lon: float, ip: str) -> dict:
     """

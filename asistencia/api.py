@@ -99,11 +99,11 @@ def verificar_estado_actual(request):
 @router.post("/chequeoprofesor/entrada", response={200: FichajeRichOut, 400: FichajeRichOut})
 def endpoint_fichar_entrada(request, payload: FichajeEntradaIn):
     """Endpoint que se dispara al confirmar la ENTRADA tras escanear el QR."""
-    docente_id = request.user.docente.id
     ip_cliente = get_client_ip(request)
     
+    # Pasamos el usuario completo para resolver la autoría y el fichaje solidario
     resultado = registrar_entrada(
-        docente_id=docente_id,
+        usuario=request.user, 
         lat=payload.latitud,
         lon=payload.longitud,
         ip=ip_cliente,
