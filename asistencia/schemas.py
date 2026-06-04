@@ -1,6 +1,6 @@
 from ninja import Schema
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 
 class FichajeEntradaIn(Schema):
     latitud: Optional[float] = None
@@ -56,6 +56,17 @@ class SolicitudEmergenciaOut(Schema):
     fecha: date
     estado: str
     nota_docente: str
+
+class SolicitudEmergenciaHistorialOut(Schema):
+    id: int
+    docente_nombre: str
+    materia_nombre: str
+    fecha: date
+    estado: str
+    nota_docente: str
+    nota_secretaria: str
+    revisado_por_nombre: Optional[str] = None
+    revisado_en: Optional[datetime] = None
 
 class ResolverEmergenciaIn(Schema):
     aprobar: bool

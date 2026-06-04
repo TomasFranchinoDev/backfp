@@ -767,3 +767,96 @@ class ConsecutiveShortClassesOrderTests(TestCase):
         res = self.client.post('/api/asistencia/chequeoprofesor/entrada', payload, content_type="application/json", REMOTE_ADDR="200.100.50.25")
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["materia"], "Clase Tres")
+
+
+class EmergenciasHistorialTests(TestCase):
+    def setUp(self):
+        from usuarios.models import Usuario, Docente, Secretario
+        
+        # Crear secretario (admin)
+        self.secretario_user = Usuario.objects.create_user(
+            username="sec_admin", email="sec@test.com", password="password", first_name="Juan", last_name="Perez"
+        )
+        self.secretario = Secretario.objects.create(user=self.secretario_user)
+        
+        # Crear docente
+        self.docente_user = Usuario.objects.create_user(
+            username="doc_prof", email="doc@test.com", password="password", first_name="Ana", last_name="Gomez"
+        )
+        self.docente = Docente.objects.create(user=self.docente_user, activo=True)
+
+        # Crear materia y slot
+        self.materia = Materia.objects.create(codigo_siu="MAT1", nombre="Matemática I", anio=1)
+        self.slot = SlotHorario.objects.create(
+            materia=self.materia,
+            dia_semana=0,
+            hora_inicio="08:00:00",
+            hora_fin="10:00:00"
+        )
+        self.hoy = date(2026, 5, 11)
+
+    def test_historial_requires_secretario(self):
+        # 1. Sin autenticar
+        response = self.client.get("/api/asistencia/admin/emergencias/historial")
+        self.assertEqual(response.status_code, 401)
+        
+        # 2. Autenticado como docente
+        self.client.force_login(self.docente_user)
+        response = self.client.get("/api/asistencia/admin/emergencias/historial")
+        self.assertEqual(response.status_code, 401)
+
+    def test_historial_retorna_solo_resueltas(self):
+        # Autenticar secretario
+        self.client.force_login(self.secretario_user)
+        
+        # 1. Emergencia pendiente (no debe salir en el historial)
+        SolicitudEmergencia.objects.create(
+            docente=self.docente,
+            slot_horario=self.slot,
+            fecha=self.hoy,
+            nota_docente="Pendiente de revisar",
+            estado=EstadoSolicitud.PENDIENTE
+        )
+        
+        # 2. Emergencia aprobada
+        e_aprobada = SolicitudEmergencia.objects.create(
+            docente=self.docente,
+            slot_horario=self.slot,
+            fecha=self.hoy,
+            nota_docente="Problema con el proyector",
+            estado=EstadoSolicitud.APROBADA,
+            nota_secretaria="Se justifica la falta",
+            revisado_por=self.secretario,
+            revisado_en=timezone.now()
+        )
+        
+        # 3. Emergencia rechazada
+        e_rechazada = SolicitudEmergencia.objects.create(
+            docente=self.docente,
+            slot_horario=self.slot,
+            fecha=self.hoy,
+            nota_docente="Teclado roto",
+            estado=EstadoSolicitud.RECHAZADA,
+            nota_secretaria="No corresponde justificar",
+            revisado_por=self.secretario,
+            revisado_en=timezone.now()
+        )
+        
+        response = self.client.get("/api/asistencia/admin/emergencias/historial")
+        self.assertEqual(response.status_code, 200)
+        
+        data = response.json()
+        self.assertEqual(len(data), 2)
+        
+        # Deben venir en orden descendente de fecha/revisado_en
+        self.assertEqual(data[0]["id"], e_rechazada.id)
+        self.assertEqual(data[1]["id"], e_aprobada.id)
+        
+        # Verificar campos devueltos
+        self.assertEqual(data[0]["docente_nombre"], "Ana Gomez")
+        self.assertEqual(data[0]["materia_nombre"], "Matemática I")
+        self.assertEqual(data[0]["estado"], "rechazada")
+        self.assertEqual(data[0]["nota_docente"], "Teclado roto")
+        self.assertEqual(data[0]["nota_secretaria"], "No corresponde justificar")
+        self.assertEqual(data[0]["revisado_por_nombre"], "Juan Perez")
+        self.assertIsNotNone(data[0]["revisado_en"])

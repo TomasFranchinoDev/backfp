@@ -8,7 +8,7 @@ from .schemas import FichajeEntradaIn, FichajeOut, FichajeRichOut, EstadoFichaje
 from .services import declarar_clase_asincronica, registrar_entrada, registrar_salida
 from .models import RegistroAsistencia
 from core.security import secretario_auth 
-from .schemas import SolicitudEmergenciaIn, SolicitudEmergenciaOut, ResolverEmergenciaIn
+from .schemas import SolicitudEmergenciaIn, SolicitudEmergenciaOut, ResolverEmergenciaIn, SolicitudEmergenciaHistorialOut
 from .services import procesar_solicitud_emergencia, resolver_emergencia
 from .models import SolicitudEmergencia
 from core.constants import EstadoSolicitud, TipoClase
@@ -176,6 +176,26 @@ def listar_emergencias_pendientes(request):
             "fecha": sol.fecha,
             "estado": sol.estado,
             "nota_docente": sol.nota_docente
+        })
+    return resultado
+
+@router.get("/admin/emergencias/historial", response=list[SolicitudEmergenciaHistorialOut], auth=secretario_auth)
+def listar_historial_emergencias(request):
+    """Lista las alertas de emergencias ya resueltas (aprobadas o rechazadas)."""
+    solicitudes = SolicitudEmergencia.objects.exclude(estado=EstadoSolicitud.PENDIENTE).select_related('docente__user', 'slot_horario__materia', 'revisado_por__user').order_by('-fecha', '-revisado_en')
+    
+    resultado = []
+    for sol in solicitudes:
+        resultado.append({
+            "id": sol.id,
+            "docente_nombre": sol.docente.user.get_full_name(),
+            "materia_nombre": sol.slot_horario.materia.nombre if sol.slot_horario else "No especificada",
+            "fecha": sol.fecha,
+            "estado": sol.estado,
+            "nota_docente": sol.nota_docente,
+            "nota_secretaria": sol.nota_secretaria,
+            "revisado_por_nombre": sol.revisado_por.user.get_full_name() if sol.revisado_por else None,
+            "revisado_en": sol.revisado_en
         })
     return resultado
 
