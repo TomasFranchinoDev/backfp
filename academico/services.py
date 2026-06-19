@@ -1,4 +1,5 @@
-from .models import Carrera, Materia, MateriaCarrera
+from .models import Carrera, Materia, MateriaCarrera, SlotHorario
+from django.db.models import Max
 
 
 def materia_to_out(materia: Materia) -> dict:
@@ -11,6 +12,13 @@ def materia_to_out(materia: Materia) -> dict:
         for vinculo in materia.carreras_asociadas.all()
     ]
 
+    # Fecha de desactivación: max valido_hasta de los slots cerrados
+    desactivada_en = None
+    if not materia.activa:
+        desactivada_en = SlotHorario.objects.filter(
+            materia=materia, valido_hasta__isnull=False
+        ).aggregate(max_fecha=Max('valido_hasta'))['max_fecha']
+
     return {
         'id': materia.id,
         'codigo_siu': materia.codigo_siu,
@@ -18,7 +26,9 @@ def materia_to_out(materia: Materia) -> dict:
         'anio': materia.anio,
         'activa': materia.activa,
         'carreras': carreras,
+        'desactivada_en': desactivada_en,
     }
+
 
 
 def sincronizar_carreras_materia(materia: Materia, carreras_ids: list[int], usuario) -> None:

@@ -4,8 +4,6 @@ from core.models import AuditoriaModel
 from core.constants import MetodoValidacion
 
 class Configuracion(AuditoriaModel):
-    # Forzamos que siempre sea ID=1 mediante la lógica en save() o en los servicios
-    dia_corte_mensual = models.SmallIntegerField(default=20)
     red_wifi_campus = models.CharField(max_length=100, blank=True)
     metodo_validacion_ubicacion = models.CharField(
         max_length=30,

@@ -34,6 +34,7 @@ class UsuarioUpdateIn(Schema):
     last_name: str
     email: EmailStr
     password: Optional[str] = None  # Opcional: si viene, se cambia; si no, queda igual.
+    activo: Optional[bool] = None
 
 class PerfilUsuarioOut(Schema):
     id: int

@@ -23,7 +23,8 @@ class MisMateriasStatsTests(TestCase):
             materia=self.materia,
             dia_semana=0,
             hora_inicio=time(18, 0),
-            hora_fin=time(20, 0)
+            hora_fin=time(20, 0),
+            valido_desde=date(2026, 1, 1)
         )
 
     def test_stats_excluye_materia_inactiva(self):
@@ -154,7 +155,8 @@ class DeclararClaseAsincronicaTests(TestCase):
             materia=self.materia,
             dia_semana=0,
             hora_inicio=time(18, 0),
-            hora_fin=time(20, 0)
+            hora_fin=time(20, 0),
+            valido_desde=date(2026, 1, 1)
         )
         
         # Asignación activa
@@ -236,7 +238,8 @@ class FichajeRichResponseTests(TestCase):
             materia=self.materia,
             dia_semana=0,
             hora_inicio=time(18, 0),
-            hora_fin=time(20, 0)
+            hora_fin=time(20, 0),
+            valido_desde=date(2026, 1, 1)
         )
         self.asig = AsignacionDocente.objects.create(
             docente=self.docente,
@@ -418,7 +421,8 @@ class FichajeRichResponseTests(TestCase):
             anio=2026,
             tipo_clase="presencial",
             hora_entrada=timezone.make_aware(timezone.datetime(2026, 5, 11, 18, 5)),
-            ubicacion_validada=True
+            ubicacion_validada=True,
+            creado_por=self.docente
         )
         
         payload = {
@@ -574,14 +578,16 @@ class ConsecutiveClassesOverlapTests(TestCase):
             materia=self.db2,
             dia_semana=0,
             hora_inicio=time(8, 0),
-            hora_fin=time(14, 0)
+            hora_fin=time(14, 0),
+            valido_desde=date(2026, 1, 1)
         )
         # Class 2: 14:15 to 16:00
         self.slot2 = SlotHorario.objects.create(
             materia=self.calc1,
             dia_semana=0,
             hora_inicio=time(14, 15),
-            hora_fin=time(16, 0)
+            hora_fin=time(16, 0),
+            valido_desde=date(2026, 1, 1)
         )
         
         # Assign both to docente
@@ -676,21 +682,24 @@ class ConsecutiveShortClassesOrderTests(TestCase):
             materia=self.m1,
             dia_semana=0,
             hora_inicio=time(16, 0),
-            hora_fin=time(16, 5)
+            hora_fin=time(16, 5),
+            valido_desde=date(2026, 1, 1)
         )
         # Class 2: 16:05 to 16:10
         self.slot2 = SlotHorario.objects.create(
             materia=self.m2,
             dia_semana=0,
             hora_inicio=time(16, 5),
-            hora_fin=time(16, 10)
+            hora_fin=time(16, 10),
+            valido_desde=date(2026, 1, 1)
         )
         # Class 3: 16:10 to 16:15
         self.slot3 = SlotHorario.objects.create(
             materia=self.m3,
             dia_semana=0,
             hora_inicio=time(16, 10),
-            hora_fin=time(16, 15)
+            hora_fin=time(16, 15),
+            valido_desde=date(2026, 1, 1)
         )
         
         # Assign all to docente
@@ -791,7 +800,8 @@ class EmergenciasHistorialTests(TestCase):
             materia=self.materia,
             dia_semana=0,
             hora_inicio="08:00:00",
-            hora_fin="10:00:00"
+            hora_fin="10:00:00",
+            valido_desde=date(2026, 1, 1)
         )
         self.hoy = date(2026, 5, 11)
 

@@ -3,6 +3,7 @@ from django.shortcuts import get_object_or_404
 from typing import List
 from core.security import secretario_auth
 from django.db import transaction
+from django.db.models import Max
 from django.utils import timezone
 
 from .models import Carrera, Materia, SlotHorario
@@ -73,6 +74,11 @@ def actualizar_materia(request, materia_id: int, payload: MateriaIn):
 
     materia = get_object_or_404(Materia, id=materia_id)
 
+    # Detectar transición: inactiva → activa (reactivación)
+    esta_reactivando = not materia.activa and payload.activa
+    # Detectar transición: activa → inactiva (desactivación)
+    esta_desactivando = materia.activa and not payload.activa
+
     datos = payload.dict()
     carreras_ids = datos.pop('carreras_ids')
 
@@ -82,6 +88,41 @@ def actualizar_materia(request, materia_id: int, payload: MateriaIn):
     materia.modificado_por = request.user
     materia.save()
 
+    hoy = timezone.localdate()
+
+    if esta_desactivando:
+        # Cerrar todos los slots activos
+        SlotHorario.objects.filter(materia=materia, valido_hasta__isnull=True).update(
+            valido_hasta=hoy,
+            modificado_por=request.user,
+        )
+        # Desactivar asignaciones docentes
+        AsignacionDocente.objects.filter(materia=materia, activa=True).update(
+            activa=False,
+            modificado_por=request.user,
+        )
+
+    # Si se reactiva, clonar los últimos slots cerrados con vigencia desde hoy
+    if esta_reactivando:
+        ultima_fecha_cierre = SlotHorario.objects.filter(
+            materia=materia, valido_hasta__isnull=False
+        ).aggregate(max_fecha=Max('valido_hasta'))['max_fecha']
+
+        if ultima_fecha_cierre:
+            slots_a_clonar = SlotHorario.objects.filter(
+                materia=materia, valido_hasta=ultima_fecha_cierre
+            )
+            for slot_viejo in slots_a_clonar:
+                SlotHorario.objects.create(
+                    materia=materia,
+                    dia_semana=slot_viejo.dia_semana,
+                    hora_inicio=slot_viejo.hora_inicio,
+                    hora_fin=slot_viejo.hora_fin,
+                    valido_desde=hoy,
+                    valido_hasta=None,
+                    creado_por=request.user,
+                )
+
     try:
         sincronizar_carreras_materia(materia, carreras_ids, request.user)
     except ValueError as exc:
@@ -90,18 +131,28 @@ def actualizar_materia(request, materia_id: int, payload: MateriaIn):
     materia = obtener_materia_con_carreras(materia.id)
     return 200, materia_to_out(materia)
 
-@router.delete("/materias/{materia_id}", response={200: MensajeOut})
+"""@router.delete("/materias/{materia_id}", response={200: MensajeOut})
 def borrar_materia(request, materia_id: int):
-    """Borrado lógico de la materia."""
+    # Borrado lógico de la materia. Cierra sus slots horarios (efecto desde mañana).
     materia = get_object_or_404(Materia, id=materia_id)
+    hoy = timezone.localdate()
+
+    # Cerrar todos los slots activos (valido_hasta inclusive → válido hoy, inválido mañana)
+    SlotHorario.objects.filter(materia=materia, valido_hasta__isnull=True).update(
+        valido_hasta=hoy,
+        modificado_por=request.user,
+    )
+
+    # Desactivar asignaciones docentes
     AsignacionDocente.objects.filter(materia=materia, activa=True).update(
         activa=False,
         modificado_por=request.user,
     )
+
     materia.activa = False
     materia.modificado_por = request.user
     materia.save()
-    return 200, {"success": True, "mensaje": "Materia desactivada correctamente"}
+    return 200, {"success": True, "mensaje": "Materia desactivada. Los horarios se cerraron con efecto desde mañana."}"""
 
 # ==========================================
 # CRUD: SLOTS HORARIOS

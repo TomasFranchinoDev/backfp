@@ -11,6 +11,10 @@ from core.security import secretario_auth
 from django.shortcuts import get_object_or_404
 from typing import List
 from django.db.models import Q
+from django.utils import timezone
+from asistencia.models import SolicitudEmergencia, RegistroAsistencia
+from academico.models import SlotHorario
+from core.constants import EstadoSolicitud
 
 router = Router(tags=["Autenticación"])
 
@@ -125,6 +129,13 @@ def actualizar_docente(request, docente_id: int, payload: UsuarioUpdateIn):
         
     user.save()
     
+    if payload.activo is not None:
+        docente.activo = payload.activo
+        docente.modificado_por = request.user
+        docente.save()
+        user.is_active = payload.activo
+        user.save()
+    
     return 200, _ok("Datos del docente actualizados correctamente")
 
 @router.patch("/docentes/{docente_id}/estado", response={200: MensajeOut, 404: MensajeOut}, auth=secretario_auth)
@@ -207,6 +218,13 @@ def actualizar_secretario(request, secretario_id: int, payload: UsuarioUpdateIn)
         
     user.save()
     
+    if payload.activo is not None:
+        secretario.activo = payload.activo
+        secretario.modificado_por = request.user
+        secretario.save()
+        user.is_active = payload.activo
+        user.save()
+    
     return 200, _ok("Datos del secretario actualizados correctamente")
 
 @router.patch("/secretarios/{secretario_id}/estado", response={200: MensajeOut, 404: MensajeOut}, auth=secretario_auth)
@@ -231,10 +249,7 @@ def obtener_dashboard_stats(request):
     """
     Retorna métricas consolidadas en tiempo real y el listado de docentes actualmente en el aula.
     """
-    from django.utils import timezone
-    from asistencia.models import SolicitudEmergencia, RegistroAsistencia
-    from academico.models import SlotHorario
-    from core.constants import EstadoSolicitud
+    
 
     docentes_activos = Docente.objects.filter(activo=True).count()
     emergencias_pendientes = SolicitudEmergencia.objects.filter(estado=EstadoSolicitud.PENDIENTE).count()

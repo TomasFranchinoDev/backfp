@@ -20,8 +20,8 @@ class ResumenFilaOut(Schema):
     detalle_ausencias: List[DetalleAusenciaOut]
 
 class ReporteMensualOut(Schema):
-    mes: int
-    anio: int
+    desde: date
+    hasta: date
     institucion: Optional[str] = None
     agrupar_por: str
     resultados: List[ResumenFilaOut]

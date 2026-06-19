@@ -4,7 +4,6 @@ from django.db import models
 class Institucion(models.TextChoices):
     ICES = 'ices', 'ICES'
     UCSE = 'ucse', 'UCSE'
-    OTRO_CONVENIO = 'otro_convenio', 'Otro Convenio'
 
 class DiaSemana(models.IntegerChoices):
     # Usamos enteros (0=Lunes, 6=Domingo) para alinear con el estándar datetime de Python

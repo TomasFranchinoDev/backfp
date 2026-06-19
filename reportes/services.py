@@ -1,5 +1,5 @@
 import calendar
-from datetime import date
+from datetime import date, timedelta
 from collections import defaultdict
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
@@ -11,14 +11,13 @@ from academico.models import SlotHorario
 from asistencia.models import RegistroAsistencia
 from core.constants import DiaSemana
 
-def calcular_ausencias_dinamicas(mes: int, anio: int, institucion: str = None, agrupar_por: str = 'docente'):
+def calcular_ausencias_dinamicas(desde: date, hasta: date, institucion: str = None, agrupar_por: str = 'docente'):
     """
     Cruza el catálogo teórico vs los registros reales para deducir ausencias.
     Soporta agrupamiento por 'docente', 'carrera' o 'materia'.
     """
-    _, ultimo_dia = calendar.monthrange(anio, mes)
-    fecha_inicio = date(anio, mes, 1)
-    fecha_fin = date(anio, mes, ultimo_dia)
+    fecha_inicio = desde
+    fecha_fin = hasta
 
     # 1. Obtener eventos del calendario académico del mes
     eventos = EventoCalendario.objects.filter(fecha__range=[fecha_inicio, fecha_fin])
@@ -61,8 +60,10 @@ def calcular_ausencias_dinamicas(mes: int, anio: int, institucion: str = None, a
 
     nombres_dias = dict(DiaSemana.choices)
 
-    for dia in range(1, ultimo_dia + 1):
-        fecha_actual = date(anio, mes, dia)
+    # Iterar sobre las fechas del rango
+    delta_days = (fecha_fin - fecha_inicio).days + 1
+    for dia in range(delta_days):
+        fecha_actual = fecha_inicio + timedelta(days=dia)
         tiene_evento = fecha_actual in mapa_eventos
         evento_desc = mapa_eventos.get(fecha_actual)
         dia_semana_actual = fecha_actual.weekday() # 0 = Lunes
@@ -147,74 +148,225 @@ def calcular_ausencias_dinamicas(mes: int, anio: int, institucion: str = None, a
 
     return reporte_grupos
 
-def generar_excel_ausencias(reporte_data, mes: int, anio: int, institucion: str, agrupar_por: str = 'docente'):
+def generar_datos_desnormalizados(desde: date, hasta: date, institucion: str = None):
     """
-    Genera un archivo Excel (.xlsx) en memoria con la estructura Pivot.
+    Genera una lista plana de diccionarios con todas las inasistencias desnormalizadas.
+    Cada elemento representa una única ausencia con todos los datos cruzados (14 columnas).
+    Incluye ausencias por feriado con la columna 'tipo_dia' indicando el evento.
+    """
+    fecha_inicio = desde
+    fecha_fin = hasta
+
+    # 1. Eventos del calendario
+    eventos = EventoCalendario.objects.filter(fecha__range=[fecha_inicio, fecha_fin])
+    mapa_eventos = {evento.fecha: evento.descripcion for evento in eventos}
+
+    # 2. Registros de asistencia
+    registros = RegistroAsistencia.objects.filter(fecha__range=[fecha_inicio, fecha_fin])
+    mapa_asistencia = {(r.docente_id, r.slot_horario_id, r.fecha): True for r in registros}
+
+    # 3. Asignaciones activas
+    asignaciones = AsignacionDocente.objects.filter(
+        activa=True,
+        fecha_inicio__lte=fecha_fin
+    ).select_related('docente__user', 'materia')
+
+    if institucion:
+        asignaciones = asignaciones.filter(materia__carreras_asociadas__carrera__institucion=institucion).distinct()
+
+    asignaciones = asignaciones.prefetch_related('materia__carreras_asociadas__carrera')
+
+    # 4. Slots horarios
+    materias_ids = [a.materia_id for a in asignaciones]
+    slots = SlotHorario.objects.filter(materia_id__in=materias_ids).select_related('materia')
+
+    slots_por_materia = defaultdict(list)
+    for slot in slots:
+        slots_por_materia[slot.materia_id].append(slot)
+
+    nombres_dias = dict(DiaSemana.choices)
+    filas = []
+
+    delta_days = (fecha_fin - fecha_inicio).days + 1
+    for dia in range(delta_days):
+        fecha_actual = fecha_inicio + timedelta(days=dia)
+        tiene_evento = fecha_actual in mapa_eventos
+        evento_desc = mapa_eventos.get(fecha_actual)
+        dia_semana_actual = fecha_actual.weekday()
+
+        for asignacion in asignaciones:
+            if asignacion.fecha_inicio > fecha_actual:
+                continue
+            if asignacion.fecha_fin and asignacion.fecha_fin < fecha_actual:
+                continue
+
+            docente = asignacion.docente
+            docente_nombre = docente.user.get_full_name()
+            docente_dni = docente.user.username
+            materia = asignacion.materia
+            carreras_asoc = list(materia.carreras_asociadas.all())
+
+            # Concatenar carreras asociadas
+            if carreras_asoc:
+                carreras_nombres = ' / '.join(mc.carrera.nombre for mc in carreras_asoc)
+                carreras_codigos = ' / '.join(mc.carrera.codigo for mc in carreras_asoc)
+                instituciones = ' / '.join(
+                    mc.carrera.get_institucion_display() if hasattr(mc.carrera, 'get_institucion_display') 
+                    else mc.carrera.institucion.upper() 
+                    for mc in carreras_asoc
+                )
+            else:
+                carreras_nombres = 'Sin carrera asignada'
+                carreras_codigos = '-'
+                instituciones = '-'
+
+            slots_hoy = [
+                s for s in slots_por_materia[materia.id]
+                if s.dia_semana == dia_semana_actual and s.valido_desde <= fecha_actual and (s.valido_hasta is None or s.valido_hasta >= fecha_actual)
+            ]
+
+            for slot in slots_hoy:
+                asistio = (docente.id, slot.id, fecha_actual) in mapa_asistencia
+
+                if not asistio:
+                    filas.append({
+                        'fecha': fecha_actual,
+                        'dia': nombres_dias.get(dia_semana_actual, str(dia_semana_actual)),
+                        'tipo_dia': evento_desc if tiene_evento else 'Laborable',
+                        'docente': docente_nombre,
+                        'dni': docente_dni,
+                        'materia': materia.nombre,
+                        'codigo_materia': materia.codigo_siu,
+                        'anio_materia': materia.anio,
+                        'carreras': carreras_nombres,
+                        'codigo_carrera': carreras_codigos,
+                        'institucion': instituciones,
+                        'hora_inicio': slot.hora_inicio.strftime('%H:%M'),
+                        'hora_fin': slot.hora_fin.strftime('%H:%M'),
+                        'rol_docente': asignacion.get_rol_display() if hasattr(asignacion, 'get_rol_display') else asignacion.rol.capitalize(),
+                    })
+
+    # Ordenar por fecha, luego por docente
+    filas.sort(key=lambda f: (f['fecha'], f['docente'], f['hora_inicio']))
+    return filas
+
+
+def generar_excel_ausencias(datos_desnormalizados: list, desde: date, hasta: date, institucion: str):
+    """
+    Genera un archivo Excel (.xlsx) desnormalizado con una fila por cada inasistencia.
+    Incluye 14 columnas con toda la información cruzada, filtros automáticos y formato profesional.
     """
     wb = Workbook()
     ws = wb.active
-    ws.title = f"Asistencia {mes}-{anio}"
+    ws.title = "Inasistencias"
 
-    # Estilos
-    header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
-    header_font = Font(color="FFFFFF", bold=True)
-    
-    # Cabecera principal dinámica
-    if agrupar_por == 'docente':
-        entidad_header = "Docente"
-    elif agrupar_por == 'carrera':
-        entidad_header = "Carrera"
-    else:
-        entidad_header = "Materia"
+    # ── Estilos ──
+    header_fill = PatternFill(start_color="2B3A67", end_color="2B3A67", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True, size=11)
+    feriado_fill = PatternFill(start_color="FFF3CD", end_color="FFF3CD", fill_type="solid")
+    feriado_font = Font(color="856404", italic=True)
+    date_font = Font(bold=True)
 
-    # Cabeceras
-    headers = [entidad_header, "Total Esperadas", "Asistencias", "Ausencias", "Detalle Faltas (Fecha | Info | Hora)"]
+    # ── Cabeceras (14 columnas) ──
+    headers = [
+        "Fecha",
+        "Día",
+        "Tipo Día",
+        "Docente",
+        "DNI",
+        "Materia",
+        "Código Materia (SIU)",
+        "Año Materia",
+        "Carrera(s)",
+        "Código Carrera",
+        "Institución",
+        "Hora Inicio",
+        "Hora Fin",
+        "Rol Docente",
+    ]
+
     for col_num, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_num, value=header)
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    # Llenado de datos
-    row_num = 2
-    for grupo_id, datos in reporte_data.items():
-        nombre_mostrar = datos['nombre']
-        if datos['codigo']:
-            nombre_mostrar = f"[{datos['codigo']}] {datos['nombre']}"
+    # ── Llenado de datos ──
+    for row_idx, fila in enumerate(datos_desnormalizados, start=2):
+        fecha_cell = ws.cell(row=row_idx, column=1, value=fila['fecha'].strftime('%d/%m/%Y'))
+        fecha_cell.font = date_font
 
-        ws.cell(row=row_num, column=1, value=nombre_mostrar)
-        ws.cell(row=row_num, column=2, value=datos['esperadas']).alignment = Alignment(horizontal="center")
-        ws.cell(row=row_num, column=3, value=datos['asistencias']).alignment = Alignment(horizontal="center")
-        
-        # Excluir feriados de la cantidad de ausencias para que coincida con las esperadas
-        ausencias_reales = [a for a in datos['ausencias'] if not a.get('evento_calendario')]
-        ws.cell(row=row_num, column=4, value=len(ausencias_reales)).alignment = Alignment(horizontal="center")
-        
-        # Formatear el detalle de ausencias como un string con saltos de línea
-        detalles_str_list = []
-        for a in datos['ausencias']:
-            fecha_str = a['fecha'].strftime('%d/%m/%Y')
-            if agrupar_por == 'docente':
-                info = a['materia_nombre']
-            elif agrupar_por == 'carrera':
-                info = f"{a['docente_nombre']} - {a['materia_nombre']}"
-            else:
-                info = a['docente_nombre']
+        ws.cell(row=row_idx, column=2, value=fila['dia'])
+        tipo_dia_cell = ws.cell(row=row_idx, column=3, value=fila['tipo_dia'])
+        ws.cell(row=row_idx, column=4, value=fila['docente'])
+        ws.cell(row=row_idx, column=5, value=fila['dni'])
+        ws.cell(row=row_idx, column=6, value=fila['materia'])
+        ws.cell(row=row_idx, column=7, value=fila['codigo_materia'])
+        ws.cell(row=row_idx, column=8, value=fila['anio_materia']).alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=9, value=fila['carreras'])
+        ws.cell(row=row_idx, column=10, value=fila['codigo_carrera'])
+        ws.cell(row=row_idx, column=11, value=fila['institucion'])
+        ws.cell(row=row_idx, column=12, value=fila['hora_inicio']).alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=13, value=fila['hora_fin']).alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=14, value=fila['rol_docente'])
 
-            evento_str = f" [⚠️ {a['evento_calendario']}]" if a.get('evento_calendario') else ""
-            detalles_str_list.append(f"{fecha_str} | {info} ({a['hora_inicio']}){evento_str}")
+        # Resaltar filas de feriado
+        if fila['tipo_dia'] != 'Laborable':
+            tipo_dia_cell.fill = feriado_fill
+            tipo_dia_cell.font = feriado_font
 
-        detalle_str = "\n".join(detalles_str_list)
-        cell_detalle = ws.cell(row=row_num, column=5, value=detalle_str)
-        cell_detalle.alignment = Alignment(wrap_text=True)
-        
-        row_num += 1
+    # ── Filtros automáticos ──
+    last_row = max(len(datos_desnormalizados) + 1, 2)
+    ws.auto_filter.ref = f"A1:N{last_row}"
 
-    # Ajustar ancho de columnas
-    ws.column_dimensions['A'].width = 35
-    ws.column_dimensions['B'].width = 15
-    ws.column_dimensions['C'].width = 15
-    ws.column_dimensions['D'].width = 15
-    ws.column_dimensions['E'].width = 60
+    # ── Congelar fila de cabecera ──
+    ws.freeze_panes = "A2"
+
+    # ── Ancho de columnas ──
+    column_widths = {
+        'A': 14,   # Fecha
+        'B': 12,   # Día
+        'C': 28,   # Tipo Día
+        'D': 30,   # Docente
+        'E': 14,   # DNI
+        'F': 35,   # Materia
+        'G': 20,   # Código Materia
+        'H': 14,   # Año Materia
+        'I': 35,   # Carrera(s)
+        'J': 16,   # Código Carrera
+        'K': 14,   # Institución
+        'L': 14,   # Hora Inicio
+        'M': 12,   # Hora Fin
+        'N': 14,   # Rol Docente
+    }
+    for col_letter, width in column_widths.items():
+        ws.column_dimensions[col_letter].width = width
+
+    # ── Hoja de resumen con filtros aplicados ──
+    ws_info = wb.create_sheet(title="Info Reporte")
+    info_header_fill = PatternFill(start_color="2B3A67", end_color="2B3A67", fill_type="solid")
+    info_header_font = Font(color="FFFFFF", bold=True, size=11)
+    
+    info_data = [
+        ("Parámetro", "Valor"),
+        ("Fecha Desde", desde.strftime('%d/%m/%Y')),
+        ("Fecha Hasta", hasta.strftime('%d/%m/%Y')),
+        ("Institución", institucion if institucion else "Todas"),
+        ("Total Inasistencias", len(datos_desnormalizados)),
+        ("Inasistencias Laborables", sum(1 for f in datos_desnormalizados if f['tipo_dia'] == 'Laborable')),
+        ("Inasistencias en Feriado/Evento", sum(1 for f in datos_desnormalizados if f['tipo_dia'] != 'Laborable')),
+    ]
+
+    for row_idx, (param, valor) in enumerate(info_data, start=1):
+        cell_param = ws_info.cell(row=row_idx, column=1, value=param)
+        cell_valor = ws_info.cell(row=row_idx, column=2, value=valor)
+        if row_idx == 1:
+            cell_param.fill = info_header_fill
+            cell_param.font = info_header_font
+            cell_valor.fill = info_header_fill
+            cell_valor.font = info_header_font
+
+    ws_info.column_dimensions['A'].width = 30
+    ws_info.column_dimensions['B'].width = 30
 
     return wb

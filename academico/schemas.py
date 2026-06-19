@@ -1,5 +1,6 @@
 from ninja import ModelSchema, Schema
-from typing import List
+from typing import List, Optional
+from datetime import date
 from .models import Carrera, Materia, SlotHorario
 
 # --- CARRERAS ---
@@ -35,6 +36,7 @@ class MateriaOut(Schema):
     anio: int
     activa: bool
     carreras: List[CarreraResumenOut]
+    desactivada_en: Optional[date] = None
 
 # --- SLOTS HORARIOS ---
 class SlotHorarioIn(ModelSchema):

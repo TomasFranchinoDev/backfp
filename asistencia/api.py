@@ -19,6 +19,7 @@ from academico.models import SlotHorario
 from calendario.services import is_fecha_bloqueada, obtener_evento_bloqueo
 from asignaciones.services import obtener_materia_vigente_para_escaneo, obtener_proxima_clase_hoy
 from configuracion.models import Configuracion
+from calendario.models import EventoCalendario
 
 
 # Solo docentes logueados pueden escanear
@@ -283,13 +284,29 @@ def obtener_mis_materias_stats(request):
         docente_id=docente_id,
         activa=True,
         materia__activa=True,
-    ).select_related('materia')
+    ).select_related('materia').prefetch_related('materia__carreras_asociadas__carrera')
+    
+    if not asignaciones:
+        return []
+        
+    materias_ids = [asig.materia_id for asig in asignaciones]
+    slots_qs = SlotHorario.objects.filter(materia_id__in=materias_ids)
+    
+    from collections import defaultdict
+    slots_por_materia = defaultdict(list)
+    for slot in slots_qs:
+        slots_por_materia[slot.materia_id].append(slot)
+        
+    # Pre-cargar todos los eventos de calendario de una vez
+    min_fecha_inicio = min((a.fecha_inicio for a in asignaciones if a.fecha_inicio), default=hoy)
+    eventos_db = EventoCalendario.objects.filter(fecha__range=(min_fecha_inicio, hoy))
+    eventos_map = {e.fecha: e for e in eventos_db}
     
     resultado = []
     
     for asig in asignaciones:
         materia = asig.materia
-        slots = list(SlotHorario.objects.filter(materia=materia))
+        slots = slots_por_materia[materia.id]
         
         # Formatear días de cursada (solo los horarios vigentes actualmente)
         dias_cursada = []
@@ -332,7 +349,7 @@ def obtener_mis_materias_stats(request):
         
         curr_date = fecha_inicio
         while curr_date <= hasta_fecha:
-            evento_calendario = obtener_evento_bloqueo(curr_date)
+            evento_calendario = eventos_map.get(curr_date)
                 
             # 1. Verificar si hay slots en este día de la semana que sean válidos en esta fecha histórica
             dia_semana_val = curr_date.weekday()

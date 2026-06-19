@@ -7,7 +7,6 @@ class ConfiguracionOut(ModelSchema):
         model = Configuracion
         fields = [
             'id',
-            'dia_corte_mensual',
             'red_wifi_campus',
             'metodo_validacion_ubicacion',
             'latitud_campus',
@@ -17,7 +16,6 @@ class ConfiguracionOut(ModelSchema):
 
 
 class ConfiguracionUpdateIn(Schema):
-    dia_corte_mensual: Optional[int] = None
     red_wifi_campus: Optional[str] = None
     metodo_validacion_ubicacion: Optional[str] = None
     latitud_campus: Optional[float] = None
