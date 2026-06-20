@@ -3,12 +3,14 @@ from django.http import HttpResponse
 from datetime import date
 from io import BytesIO
 from core.security import secretario_auth
+from core.ratelimit import ratelimit_heavy_ops
 from .schemas import ReporteMensualOut
 from .services import calcular_ausencias_dinamicas, generar_datos_desnormalizados, generar_excel_ausencias
 
 router = Router(tags=["Reportes y Auditoría"], auth=secretario_auth)
 
 @router.get("/ausencias", response=ReporteMensualOut)
+@ratelimit_heavy_ops
 def previsualizar_reporte_ausencias(request, desde: date, hasta: date, institucion: str = None, agrupar_por: str = "docente"):
     """
     Devuelve un JSON con el cálculo dinámico de presencias y ausencias del mes.
@@ -40,6 +42,7 @@ def previsualizar_reporte_ausencias(request, desde: date, hasta: date, instituci
     }
 
 @router.get("/exportar")
+@ratelimit_heavy_ops
 def descargar_excel_ausencias(request, desde: date, hasta: date, institucion: str = "Ambas"):
     """
     Genera un Excel desnormalizado con una fila por cada inasistencia y toda la información cruzada.

@@ -1,11 +1,13 @@
 from ninja import Router
 from django.http import HttpRequest
 from django.middleware.csrf import get_token
+from core.ratelimit import ratelimit_brute_force
 
 router = Router(tags=["CSRF"])
 
 
 @router.get("/token")
+@ratelimit_brute_force
 def obtener_csrf_token(request: HttpRequest):
     """
     Endpoint para obtener el CSRF token en despliegues cross-origin.

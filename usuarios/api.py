@@ -2,6 +2,7 @@ from ninja import Router
 from django.contrib.auth import authenticate, login, logout
 from django.http import HttpRequest
 from core.security import secretario_auth
+from core.ratelimit import ratelimit_brute_force
 from usuarios.models import Secretario
 from .schemas import LoginIn, UsuarioOut, MensajeOut
 from .services import obtener_rol_usuario
@@ -27,6 +28,7 @@ def _err(mensaje: str) -> dict:
     return {"success": False, "mensaje": mensaje}
 
 @router.post("/login", response={200: UsuarioOut, 401: MensajeOut})
+@ratelimit_brute_force
 def api_login(request: HttpRequest, payload: LoginIn):
     # authenticate() verifica la DB y devuelve el usuario si la pass es correcta
     user = authenticate(request, username=payload.username, password=payload.password)

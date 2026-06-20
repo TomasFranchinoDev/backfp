@@ -8,6 +8,7 @@ from ninja import File, Router
 from ninja.files import UploadedFile
 
 from core.security import secretario_auth
+from core.ratelimit import ratelimit_heavy_ops
 
 from .plantilla import generar_plantilla_excel
 from .progress import (
@@ -49,6 +50,7 @@ def descargar_plantilla(request):
 
 
 @router.post("/siu", response={200: InicioImportacionOut, 400: dict})
+@ratelimit_heavy_ops
 def subir_archivo_siu(request, file: UploadedFile = File(...)):
     """Recibe un Excel, lo valida de forma básica y lanza el procesamiento
     en un hilo de fondo.  Devuelve un ``task_id`` para seguir el progreso

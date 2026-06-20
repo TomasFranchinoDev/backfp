@@ -2,6 +2,7 @@ from datetime import date, timedelta
 from typing import Optional
 from ninja import Router
 from core.security import docente_auth
+from core.ratelimit import ratelimit_heavy_ops
 from django.utils import timezone
 from django.db.models import Q
 from .schemas import FichajeEntradaIn, FichajeOut, FichajeRichOut, EstadoFichajeOut, MateriaStatsOut
@@ -271,6 +272,7 @@ def declarar_asincronica_endpoint(request, payload: DeclaracionAsincronicaIn):
 
 
 @router.get("/mis_materias_stats", response=list[MateriaStatsOut])
+@ratelimit_heavy_ops
 def obtener_mis_materias_stats(request):
     """
     Retorna el listado consolidado de materias asignadas al docente

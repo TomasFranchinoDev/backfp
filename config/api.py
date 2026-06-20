@@ -1,4 +1,6 @@
 from ninja import NinjaAPI
+from django.http import JsonResponse
+from django_ratelimit.exceptions import Ratelimited
 from usuarios.api import router as usuarios_router
 from academico.api import router as academico_router
 from asignaciones.api import router as asignaciones_router
@@ -14,6 +16,15 @@ api = NinjaAPI(
     version="1.0.0",
     description="Backend oficial para el fichaje docente."
 )
+
+@api.exception_handler(Ratelimited)
+def on_ratelimited(request, exc):
+    """Captura excepciones de rate limit y devuelve un 429 limpio."""
+    return api.create_response(
+        request,
+        {"success": False, "mensaje": "Demasiadas solicitudes. Intente nuevamente en unos momentos."},
+        status=429,
+    )
 # Registramos los módulos
 api.add_router("/csrf/", csrf_router)
 api.add_router("/auth/", usuarios_router)

@@ -199,6 +199,17 @@ STATICFILES_DIRS = [
 # Esto permite que /assets/index-xxx.js, /favicon.svg, etc. se sirvan directamente
 WHITENOISE_ROOT = os.path.join(BASE_DIR, 'dist')
 
+# ─── Cache para Rate Limiting ────────────────────────────────────────────────
+# Con LocMemCache cada worker de Gunicorn mantiene su propio contador.
+# Para 2 workers el límite efectivo es 2x (ej. 10/m en vez de 5/m).
+# Si se necesita enforcement estricto, migrar a RedisCache.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'ratelimit-cache',
+    }
+}
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 

@@ -1,11 +1,11 @@
 from ninja import Schema
-from typing import Optional
+from typing import Optional, Literal
 from datetime import date, datetime
 
 class FichajeEntradaIn(Schema):
     latitud: Optional[float] = None
     longitud: Optional[float] = None
-    tipo_clase: str = 'presencial' # Puede enviar 'asincronica' o 'virtual_sincronica'
+    tipo_clase: Literal['presencial', 'asincronica', 'virtual_sincronica'] = 'presencial'
 
 class FichajeOut(Schema):
     """Respuesta simple para endpoints que no requieren desglose (emergencias, asincrónica)."""
