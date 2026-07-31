@@ -88,12 +88,12 @@ def actualizar_materia(request, materia_id: int, payload: MateriaIn):
     materia.modificado_por = request.user
     materia.save()
 
-    hoy = timezone.localdate()
+    now = timezone.now()
 
     if esta_desactivando:
         # Cerrar todos los slots activos
         SlotHorario.objects.filter(materia=materia, valido_hasta__isnull=True).update(
-            valido_hasta=hoy,
+            valido_hasta=now,
             modificado_por=request.user,
         )
         # Desactivar asignaciones docentes
@@ -118,7 +118,7 @@ def actualizar_materia(request, materia_id: int, payload: MateriaIn):
                     dia_semana=slot_viejo.dia_semana,
                     hora_inicio=slot_viejo.hora_inicio,
                     hora_fin=slot_viejo.hora_fin,
-                    valido_desde=hoy,
+                    valido_desde=now,
                     valido_hasta=None,
                     creado_por=request.user,
                 )
@@ -131,28 +131,12 @@ def actualizar_materia(request, materia_id: int, payload: MateriaIn):
     materia = obtener_materia_con_carreras(materia.id)
     return 200, materia_to_out(materia)
 
-"""@router.delete("/materias/{materia_id}", response={200: MensajeOut})
+@router.delete("/materias/{materia_id}", response={200: MensajeOut})
 def borrar_materia(request, materia_id: int):
-    # Borrado lógico de la materia. Cierra sus slots horarios (efecto desde mañana).
+    """Elimina físicamente una materia y todo su historial asociado (CASCADE)."""
     materia = get_object_or_404(Materia, id=materia_id)
-    hoy = timezone.localdate()
-
-    # Cerrar todos los slots activos (valido_hasta inclusive → válido hoy, inválido mañana)
-    SlotHorario.objects.filter(materia=materia, valido_hasta__isnull=True).update(
-        valido_hasta=hoy,
-        modificado_por=request.user,
-    )
-
-    # Desactivar asignaciones docentes
-    AsignacionDocente.objects.filter(materia=materia, activa=True).update(
-        activa=False,
-        modificado_por=request.user,
-    )
-
-    materia.activa = False
-    materia.modificado_por = request.user
-    materia.save()
-    return 200, {"success": True, "mensaje": "Materia desactivada. Los horarios se cerraron con efecto desde mañana."}"""
+    materia.delete()
+    return 200, {"success": True, "mensaje": "Materia eliminada permanentemente"}
 
 # ==========================================
 # CRUD: SLOTS HORARIOS
@@ -187,10 +171,10 @@ def actualizar_slot(request, slot_id: int, payload: SlotHorarioIn):
         slot_viejo = get_object_or_404(SlotHorario, id=slot_id)
         materia = get_object_or_404(Materia, id=payload.materia_id)
         
-        hoy = timezone.localdate()
+        now = timezone.now()
         
         # Cerramos el slot viejo
-        slot_viejo.valido_hasta = hoy
+        slot_viejo.valido_hasta = now
         slot_viejo.modificado_por = request.user
         slot_viejo.save()
         
@@ -198,7 +182,7 @@ def actualizar_slot(request, slot_id: int, payload: SlotHorarioIn):
         datos = payload.dict(exclude={'materia_id'})
         slot_nuevo = SlotHorario.objects.create(
             materia=materia,
-            valido_desde=hoy + timezone.timedelta(days=1),
+            valido_desde=now,
             creado_por=request.user,
             **datos
         )
@@ -208,7 +192,7 @@ def actualizar_slot(request, slot_id: int, payload: SlotHorarioIn):
 def borrar_slot(request, slot_id: int):
     """Elimina lógicamente un bloque horario."""
     slot = get_object_or_404(SlotHorario, id=slot_id)
-    slot.valido_hasta = timezone.localdate()
+    slot.valido_hasta = timezone.now()
     slot.modificado_por = request.user
     slot.save()
     return 200, {"success": True, "mensaje": "Slot eliminado correctamente"}

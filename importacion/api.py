@@ -94,11 +94,13 @@ ESTADOS_TERMINALES = {"completado", "error_validacion", "error_sistema"}
 
 
 @router.get("/progreso/{task_id}")
-async def progreso_importacion(request, task_id: str):
+def progreso_importacion(request, task_id: str):
     """Endpoint Server-Sent Events (SSE) que transmite el progreso de una
-    importación en tiempo real.  Requiere ASGI (Uvicorn)."""
+    importación en tiempo real. Modificado a sincrónico para evitar
+    buffering bajo WSGI."""
 
-    async def event_stream():
+    def event_stream():
+        import time
         intentos_vacios = 0
         while True:
             progress = obtener_progreso(task_id)
@@ -112,7 +114,7 @@ async def progreso_importacion(request, task_id: str):
                         "paso": "Tarea no encontrada",
                     })
                     break
-                await asyncio.sleep(0.5)
+                time.sleep(0.5)
                 continue
 
             intentos_vacios = 0
@@ -123,7 +125,7 @@ async def progreso_importacion(request, task_id: str):
             if progress.get("estado") in ESTADOS_TERMINALES:
                 break
 
-            await asyncio.sleep(0.5)
+            time.sleep(0.5)
 
     response = StreamingHttpResponse(
         event_stream(),

@@ -39,5 +39,22 @@ class SlotHorario(AuditoriaModel):
     dia_semana = models.IntegerField(choices=DiaSemana.choices)
     hora_inicio = models.TimeField()
     hora_fin = models.TimeField()
-    valido_desde = models.DateField(default=timezone.now)
-    valido_hasta = models.DateField(null=True, blank=True)
+    valido_desde = models.DateTimeField(default=timezone.now)
+    valido_hasta = models.DateTimeField(null=True, blank=True)
+
+    def is_valid_at(self, target_date):
+        """
+        Calcula si este slot es válido en la fecha indicada, al momento exacto
+        en que la clase debería iniciar.
+        """
+        import datetime
+        from django.utils import timezone
+        
+        dt_start_naive = datetime.datetime.combine(target_date, self.hora_inicio)
+        dt_start = timezone.make_aware(dt_start_naive)
+        
+        if self.valido_desde > dt_start:
+            return False
+        if self.valido_hasta and self.valido_hasta <= dt_start:
+            return False
+        return True

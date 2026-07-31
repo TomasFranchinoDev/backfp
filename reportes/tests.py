@@ -1,6 +1,7 @@
 from django.test import TestCase
 from django.contrib.auth import get_user_model
-from datetime import date, time
+from django.utils import timezone
+from datetime import date, time, datetime
 from usuarios.models import Docente, Secretario
 from academico.models import Carrera, Materia, MateriaCarrera, SlotHorario
 from asignaciones.models import AsignacionDocente
@@ -61,7 +62,7 @@ class ReportesTestCase(TestCase):
             dia_semana=0,
             hora_inicio=time(8, 0),
             hora_fin=time(10, 0),
-            valido_desde=date(2026, 1, 1),
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1)),
             creado_por=self.secretario
         )
 
@@ -223,7 +224,7 @@ class DesnormalizadoTestCase(TestCase):
         self.slot = SlotHorario.objects.create(
             materia=self.materia, dia_semana=0,
             hora_inicio=time(8, 0), hora_fin=time(10, 0),
-            valido_desde=date(2026, 1, 1), creado_por=self.secretario
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1)), creado_por=self.secretario
         )
 
         self.asignacion = AsignacionDocente.objects.create(
@@ -295,7 +296,7 @@ class DesnormalizadoTestCase(TestCase):
         SlotHorario.objects.create(
             materia=materia_ucse, dia_semana=0,
             hora_inicio=time(14, 0), hora_fin=time(16, 0),
-            valido_desde=date(2026, 1, 1), creado_por=self.secretario
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1)), creado_por=self.secretario
         )
         AsignacionDocente.objects.create(
             docente=self.docente, materia=materia_ucse, rol='titular',

@@ -762,7 +762,7 @@ def persistir_datos(
                         dia_semana=sl.dia_semana,
                         hora_inicio=sl.hora_inicio,
                         hora_fin=sl.hora_fin,
-                        valido_desde=now.date(),
+                        valido_desde=now,
                         creado_por=usuario_creador,
                         modificado_por=usuario_creador,
                     ))

@@ -1,6 +1,6 @@
 from django.test import TestCase
 from django.utils import timezone
-from datetime import date, time, timedelta
+from datetime import date, time, datetime, timedelta, datetime
 from usuarios.models import Usuario, Docente
 from academico.models import Materia, SlotHorario
 from asignaciones.models import AsignacionDocente
@@ -24,7 +24,7 @@ class MisMateriasStatsTests(TestCase):
             dia_semana=0,
             hora_inicio=time(18, 0),
             hora_fin=time(20, 0),
-            valido_desde=date(2026, 1, 1)
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1))
         )
 
     def test_stats_excluye_materia_inactiva(self):
@@ -156,7 +156,7 @@ class DeclararClaseAsincronicaTests(TestCase):
             dia_semana=0,
             hora_inicio=time(18, 0),
             hora_fin=time(20, 0),
-            valido_desde=date(2026, 1, 1)
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1))
         )
         
         # Asignación activa
@@ -239,7 +239,7 @@ class FichajeRichResponseTests(TestCase):
             dia_semana=0,
             hora_inicio=time(18, 0),
             hora_fin=time(20, 0),
-            valido_desde=date(2026, 1, 1)
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1))
         )
         self.asig = AsignacionDocente.objects.create(
             docente=self.docente,
@@ -422,7 +422,7 @@ class FichajeRichResponseTests(TestCase):
             tipo_clase="presencial",
             hora_entrada=timezone.make_aware(timezone.datetime(2026, 5, 11, 18, 5)),
             ubicacion_validada=True,
-            creado_por=self.docente
+            creado_por=self.user
         )
         
         payload = {
@@ -579,7 +579,7 @@ class ConsecutiveClassesOverlapTests(TestCase):
             dia_semana=0,
             hora_inicio=time(8, 0),
             hora_fin=time(14, 0),
-            valido_desde=date(2026, 1, 1)
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1))
         )
         # Class 2: 14:15 to 16:00
         self.slot2 = SlotHorario.objects.create(
@@ -587,7 +587,7 @@ class ConsecutiveClassesOverlapTests(TestCase):
             dia_semana=0,
             hora_inicio=time(14, 15),
             hora_fin=time(16, 0),
-            valido_desde=date(2026, 1, 1)
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1))
         )
         
         # Assign both to docente
@@ -683,7 +683,7 @@ class ConsecutiveShortClassesOrderTests(TestCase):
             dia_semana=0,
             hora_inicio=time(16, 0),
             hora_fin=time(16, 5),
-            valido_desde=date(2026, 1, 1)
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1))
         )
         # Class 2: 16:05 to 16:10
         self.slot2 = SlotHorario.objects.create(
@@ -691,7 +691,7 @@ class ConsecutiveShortClassesOrderTests(TestCase):
             dia_semana=0,
             hora_inicio=time(16, 5),
             hora_fin=time(16, 10),
-            valido_desde=date(2026, 1, 1)
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1))
         )
         # Class 3: 16:10 to 16:15
         self.slot3 = SlotHorario.objects.create(
@@ -699,7 +699,7 @@ class ConsecutiveShortClassesOrderTests(TestCase):
             dia_semana=0,
             hora_inicio=time(16, 10),
             hora_fin=time(16, 15),
-            valido_desde=date(2026, 1, 1)
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1))
         )
         
         # Assign all to docente
@@ -801,7 +801,7 @@ class EmergenciasHistorialTests(TestCase):
             dia_semana=0,
             hora_inicio="08:00:00",
             hora_fin="10:00:00",
-            valido_desde=date(2026, 1, 1)
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1))
         )
         self.hoy = date(2026, 5, 11)
 

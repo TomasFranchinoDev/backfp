@@ -78,6 +78,7 @@ class ClaseDisponibleOut(Schema):
     materia_nombre: str
     hora_inicio: str
     hora_fin: str
+    ya_fichada: bool = False
 
 class DeclaracionAsincronicaIn(Schema):
     slot_horario_id: int

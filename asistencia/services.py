@@ -237,6 +237,10 @@ def procesar_solicitud_emergencia(docente_id: int, slot_id: Optional[int], nota:
     if SolicitudEmergencia.objects.filter(docente_id=docente_id, fecha=fecha, estado=EstadoSolicitud.PENDIENTE).exists():
         return False, "Ya tenés una solicitud pendiente de revisión para la fecha indicada."
 
+    if slot_id:
+        if RegistroAsistencia.objects.filter(docente_id=docente_id, slot_horario_id=slot_id, fecha=fecha).exists():
+            return False, "Ya registraste asistencia para esta clase. No podés reportar una emergencia."
+
     SolicitudEmergencia.objects.create(
         docente_id=docente_id,
         slot_horario=slot,
@@ -274,13 +278,14 @@ def resolver_emergencia(solicitud_id: int, aprobar: bool, nota_secretaria: str, 
                 solicitud.fecha,
             ).values_list('materia_id', flat=True)
             
-            slots_to_process = list(SlotHorario.objects.filter(
+            slots_to_process_qs = SlotHorario.objects.filter(
                 materia_id__in=materias_ids,
                 dia_semana=dia_semana_val,
-                valido_desde__lte=solicitud.fecha
+                valido_desde__date__lte=solicitud.fecha
             ).filter(
-                Q(valido_hasta__isnull=True) | Q(valido_hasta__gte=solicitud.fecha)
-            ))
+                Q(valido_hasta__isnull=True) | Q(valido_hasta__date__gte=solicitud.fecha)
+            )
+            slots_to_process = [s for s in slots_to_process_qs if s.is_valid_at(solicitud.fecha)]
 
         for slot in slots_to_process:
             # Verificar si ya existe registro de asistencia para evitar duplicados
@@ -332,7 +337,7 @@ def declarar_clase_asincronica(docente_id: int, slot_id: int, fecha_dictado: dat
     if not slot:
         return False, "El horario seleccionado no existe."
 
-    if slot.valido_desde > fecha_dictado or (slot.valido_hasta and slot.valido_hasta < fecha_dictado):
+    if not slot.is_valid_at(fecha_dictado):
         return False, "El horario seleccionado no era válido en esa fecha."
 
     if slot.dia_semana != fecha_dictado.weekday():

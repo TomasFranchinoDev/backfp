@@ -65,7 +65,8 @@ class DashboardStatsTests(TestCase):
             anio=2026,
             tipo_clase=TipoClase.PRESENCIAL,
             hora_entrada=timezone.now(),
-            ubicacion_validada=True
+            ubicacion_validada=True,
+            creado_por=self.docente_user
         )
         
         response = self.client.get("/api/auth/secretario/dashboard-stats")

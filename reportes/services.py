@@ -85,7 +85,7 @@ def calcular_ausencias_dinamicas(desde: date, hasta: date, institucion: str = No
             # Revisar si hay clases programadas para este día de la semana, vigentes en la fecha actual
             slots_hoy = [
                 s for s in slots_por_materia[materia_id] 
-                if s.dia_semana == dia_semana_actual and s.valido_desde <= fecha_actual and (s.valido_hasta is None or s.valido_hasta >= fecha_actual)
+                if s.dia_semana == dia_semana_actual and s.is_valid_at(fecha_actual)
             ]
 
             for slot in slots_hoy:
@@ -222,7 +222,7 @@ def generar_datos_desnormalizados(desde: date, hasta: date, institucion: str = N
 
             slots_hoy = [
                 s for s in slots_por_materia[materia.id]
-                if s.dia_semana == dia_semana_actual and s.valido_desde <= fecha_actual and (s.valido_hasta is None or s.valido_hasta >= fecha_actual)
+                if s.dia_semana == dia_semana_actual and s.is_valid_at(fecha_actual)
             ]
 
             for slot in slots_hoy:

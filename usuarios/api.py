@@ -11,7 +11,7 @@ from usuarios.schemas import UsuarioRegistroIn, UsuarioUpdateIn, DocenteOut, Sec
 from core.security import secretario_auth
 from django.shortcuts import get_object_or_404
 from typing import List
-from django.db.models import Q
+from django.db.models import Q, F
 from django.utils import timezone
 from asistencia.models import SolicitudEmergencia, RegistroAsistencia
 from academico.models import SlotHorario
@@ -162,6 +162,19 @@ def cambiar_estado_docente(request, docente_id: int, payload: CambioEstadoIn):
     return 200, _ok(f"Docente {accion} exitosamente.")
 
 
+@router.delete("/docentes/{docente_id}", response={200: MensajeOut, 404: MensajeOut}, auth=secretario_auth)
+def borrar_docente(request, docente_id: int):
+    """Elimina físicamente a un docente y su usuario asociado, incluyendo historial en cascada."""
+    docente = Docente.objects.select_related('user').filter(id=docente_id).first()
+    if not docente:
+        return 404, _err("Docente no encontrado")
+    
+    # Al borrar el usuario de Django, por CASCADE se borrará el perfil Docente
+    # y todas sus asignaciones, asistencias, etc.
+    docente.user.delete()
+    return 200, _ok("Docente eliminado permanentemente.")
+
+
 # ==========================================
 # CRUD: SECRETARIOS
 # ==========================================
@@ -246,6 +259,21 @@ def cambiar_estado_secretario(request, secretario_id: int, payload: CambioEstado
     return 200, _ok(f"Secretario {accion} exitosamente.")
 
 
+@router.delete("/secretarios/{secretario_id}", response={200: MensajeOut, 404: MensajeOut}, auth=secretario_auth)
+def borrar_secretario(request, secretario_id: int):
+    """Elimina físicamente a un secretario y su usuario asociado."""
+    secretario = Secretario.objects.select_related('user').filter(id=secretario_id).first()
+    if not secretario:
+        return 404, _err("Secretario no encontrado")
+    
+    # Evitar borrar el propio usuario que está logueado haciendo la petición (opcional, pero buena práctica)
+    if secretario.user.id == request.user.id:
+        return 400, _err("No puedes eliminar tu propio usuario.")
+        
+    secretario.user.delete()
+    return 200, _ok("Secretario eliminado permanentemente.")
+
+
 @router.get("/secretario/dashboard-stats", response=DashboardStatsOut, auth=secretario_auth)
 def obtener_dashboard_stats(request):
     """
@@ -258,15 +286,18 @@ def obtener_dashboard_stats(request):
     
     hoy = timezone.localdate()
     dia_semana_actual = hoy.weekday()
-    clases_hoy = SlotHorario.objects.filter(
+    clases_hoy_qs = SlotHorario.objects.filter(
         dia_semana=dia_semana_actual,
-        valido_desde__lte=hoy
+        valido_desde__date__lte=hoy
     ).filter(
-        Q(valido_hasta__isnull=True) | Q(valido_hasta__gte=hoy)
-    ).count()
+        Q(valido_hasta__isnull=True) | Q(valido_hasta__date__gte=hoy)
+    )
+    clases_hoy = sum(1 for slot in clases_hoy_qs if slot.is_valid_at(hoy))
     
     asistencias_activas = RegistroAsistencia.objects.filter(
+        Q(creado_por_id=F('docente__user_id')) | Q(modificado_por_id=F('docente__user_id')),
         fecha=hoy,
+        hora_entrada__isnull=False,
         hora_salida__isnull=True
     ).select_related('docente__user', 'slot_horario__materia')
     

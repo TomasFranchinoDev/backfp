@@ -229,11 +229,22 @@ def listar_clases_del_dia(request, fecha: Optional[date] = None):
     materias_ids = obtener_asignaciones_docente_vigentes(docente_id, target_date).values_list('materia_id', flat=True)
     
     # Filtramos los slots de esas materias que caen exactamente hoy y son válidos
-    slots_hoy = SlotHorario.objects.filter(
-        materia_id__in=materias_ids, dia_semana=dia_semana_actual, valido_desde__lte=target_date
+    slots_hoy_qs = SlotHorario.objects.filter(
+        materia_id__in=materias_ids, dia_semana=dia_semana_actual, valido_desde__date__lte=target_date
     ).filter(
-        Q(valido_hasta__isnull=True) | Q(valido_hasta__gte=target_date)
+        Q(valido_hasta__isnull=True) | Q(valido_hasta__date__gte=target_date)
     ).select_related('materia').prefetch_related('materia__carreras_asociadas__carrera')
+    
+    slots_hoy = [slot for slot in slots_hoy_qs if slot.is_valid_at(target_date)]
+    
+    slots_ids = [s.id for s in slots_hoy]
+    registros_hoy = RegistroAsistencia.objects.filter(
+        docente_id=docente_id,
+        fecha=target_date,
+        slot_horario_id__in=slots_ids
+    ).values_list('slot_horario_id', flat=True)
+    
+    slots_fichados = set(registros_hoy)
     
     # Formateamos para el frontend
     resultado = []
@@ -247,7 +258,8 @@ def listar_clases_del_dia(request, fecha: Optional[date] = None):
             "carreras_codigos": carreras_codigos,
             "materia_nombre": slot.materia.nombre,
             "hora_inicio": slot.hora_inicio.strftime("%H:%M"),
-            "hora_fin": slot.hora_fin.strftime("%H:%M")
+            "hora_fin": slot.hora_fin.strftime("%H:%M"),
+            "ya_fichada": slot.id in slots_fichados
         })
         
     return resultado
@@ -357,7 +369,7 @@ def obtener_mis_materias_stats(request):
             dia_semana_val = curr_date.weekday()
             slots_hoy = [
                 s for s in slots 
-                if s.dia_semana == dia_semana_val and s.valido_desde <= curr_date and (s.valido_hasta is None or s.valido_hasta >= curr_date)
+                if s.dia_semana == dia_semana_val and s.is_valid_at(curr_date)
             ]
             
             for slot in slots_hoy:
