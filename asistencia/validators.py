@@ -38,8 +38,9 @@ def validar_ubicacion(lat_docente: float, lon_docente: float, ip_registrada: str
     # 1. Chequeo por WiFi (usamos la IP pública o rango de red interna)
     # Nota: Acá asumimos que config.red_wifi_campus guarda la IP estática de salida de ICES
     wifi_ok: Optional[bool] = None
-    if config.red_wifi_campus:
-        wifi_ok = (ip_registrada in config.red_wifi_campus)
+    if config.red_wifi_campus and ip_registrada:
+        prefijos = [p.strip() for p in config.red_wifi_campus.split(',') if p.strip()]
+        wifi_ok = any(ip_registrada.startswith(p) for p in prefijos)
 
     # 2. Chequeo por GPS (coordenadas y radio desde configuración global)
     gps_ok: Optional[bool] = None
