@@ -747,6 +747,9 @@ def persistir_datos(
         # ── 6. SlotHorario (solo crear nuevos) ───────────────────────────
         actualizar_progreso(task_id, paso="Guardando horarios…", progreso=85)
 
+        # Vigencia desde el inicio del día para que aplique a clases de hoy
+        inicio_del_dia = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
         existing_slots = {
             (s.materia_id, s.dia_semana, s.hora_inicio, s.hora_fin): s
             for s in SlotHorario.objects.filter(valido_hasta__isnull=True)
@@ -762,7 +765,7 @@ def persistir_datos(
                         dia_semana=sl.dia_semana,
                         hora_inicio=sl.hora_inicio,
                         hora_fin=sl.hora_fin,
-                        valido_desde=now,
+                        valido_desde=inicio_del_dia,
                         creado_por=usuario_creador,
                         modificado_por=usuario_creador,
                     ))

@@ -109,6 +109,8 @@ def actualizar_materia(request, materia_id: int, payload: MateriaIn):
         ).aggregate(max_fecha=Max('valido_hasta'))['max_fecha']
 
         if ultima_fecha_cierre:
+            # Vigencia desde el inicio del día para que aplique a clases de hoy
+            inicio_del_dia = now.replace(hour=0, minute=0, second=0, microsecond=0)
             slots_a_clonar = SlotHorario.objects.filter(
                 materia=materia, valido_hasta=ultima_fecha_cierre
             )
@@ -118,7 +120,7 @@ def actualizar_materia(request, materia_id: int, payload: MateriaIn):
                     dia_semana=slot_viejo.dia_semana,
                     hora_inicio=slot_viejo.hora_inicio,
                     hora_fin=slot_viejo.hora_fin,
-                    valido_desde=now,
+                    valido_desde=inicio_del_dia,
                     valido_hasta=None,
                     creado_por=request.user,
                 )
@@ -158,7 +160,14 @@ def crear_slot(request, payload: SlotHorarioIn):
     """Crea un bloque horario para una materia."""
     materia = get_object_or_404(Materia, id=payload.materia_id)
     datos = payload.dict(exclude={'materia_id'})
-    slot = SlotHorario.objects.create(materia=materia, creado_por=request.user, **datos)
+    # Vigencia desde el inicio del día actual para que aplique a clases de hoy
+    inicio_del_dia = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    slot = SlotHorario.objects.create(
+        materia=materia,
+        creado_por=request.user,
+        valido_desde=inicio_del_dia,
+        **datos,
+    )
     return 201, slot
 
 # ==========================================
