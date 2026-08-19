@@ -31,7 +31,8 @@ class DashboardStatsTests(TestCase):
             materia=self.materia,
             dia_semana=self.hoy.weekday(),
             hora_inicio="08:00:00",
-            hora_fin="10:00:00"
+            hora_fin="10:00:00",
+            valido_desde=timezone.now() - timezone.timedelta(days=1)
         )
         
     def test_dashboard_stats_requires_secretario(self):

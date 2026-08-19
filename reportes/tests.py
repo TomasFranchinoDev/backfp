@@ -334,3 +334,153 @@ class DesnormalizadoTestCase(TestCase):
             self.assertIn('TPI', fila['codigo_carrera'])
             self.assertIn('LI', fila['codigo_carrera'])
 
+
+class TipoClaseReportesTestCase(TestCase):
+    """Tests para la discriminación de tipos de clase (Presencial, Virtual Sincrónica, Asincrónica) en reportes y exportaciones."""
+
+    def setUp(self):
+        self.secretario = get_user_model().objects.create_user(
+            username='secretario_tc', email='secre_tc@ices.edu.ar', password='password123'
+        )
+        self.secretario_profile = Secretario.objects.create(user=self.secretario, activo=True)
+
+        self.user_docente = get_user_model().objects.create_user(
+            username='40999888', email='docente_tc@ices.edu.ar',
+            first_name='Maria', last_name='Gomez', password='password123'
+        )
+        self.docente = Docente.objects.create(user=self.user_docente, creado_por=self.secretario)
+
+        self.carrera = Carrera.objects.create(
+            codigo='TPI', nombre='Tecnicatura en Programación',
+            duracion_anios=3, institucion='ices', creado_por=self.secretario
+        )
+        self.materia = Materia.objects.create(
+            codigo_siu='MAT02', nombre='Álgebra', anio=2026, creado_por=self.secretario
+        )
+        MateriaCarrera.objects.create(
+            materia=self.materia, carrera=self.carrera, anio_plan=1, creado_por=self.secretario
+        )
+
+        self.slot = SlotHorario.objects.create(
+            materia=self.materia, dia_semana=0,
+            hora_inicio=time(8, 0), hora_fin=time(10, 0),
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1)), creado_por=self.secretario
+        )
+
+        self.asignacion = AsignacionDocente.objects.create(
+            docente=self.docente, materia=self.materia, rol='titular',
+            activa=True, fecha_inicio=date(2026, 5, 1), fecha_fin=date(2026, 5, 31),
+            creado_por=self.secretario
+        )
+
+    def test_calculo_dinamico_con_distintos_tipos_de_clase(self):
+        # Mayo 2026 lunes: 4, 11, 18, 25.
+        # Registrar Lunes 4: Presencial
+        RegistroAsistencia.objects.create(
+            docente=self.docente, slot_horario=self.slot, fecha=date(2026, 5, 4),
+            anio=2026, tipo_clase='presencial', creado_por=self.secretario
+        )
+        # Registrar Lunes 11: Virtual Sincrónica
+        RegistroAsistencia.objects.create(
+            docente=self.docente, slot_horario=self.slot, fecha=date(2026, 5, 11),
+            anio=2026, tipo_clase='virtual_sincronica', creado_por=self.secretario
+        )
+        # Registrar Lunes 18: Asincrónica
+        RegistroAsistencia.objects.create(
+            docente=self.docente, slot_horario=self.slot, fecha=date(2026, 5, 18),
+            anio=2026, tipo_clase='asincronica', creado_por=self.secretario
+        )
+        # Lunes 25: Sin asistencia (ausencia)
+
+        res = calcular_ausencias_dinamicas(desde=date(2026, 5, 1), hasta=date(2026, 5, 31), agrupar_por='docente')
+        doc_res = res[self.docente.id]
+
+        self.assertEqual(doc_res['esperadas'], 4)
+        self.assertEqual(doc_res['asistencias'], 3)
+        self.assertEqual(doc_res['asistencias_presenciales'], 1)
+        self.assertEqual(doc_res['asistencias_virtuales_sincronicas'], 1)
+        self.assertEqual(doc_res['asistencias_asincronicas'], 1)
+        self.assertEqual(len(doc_res['ausencias']), 1)
+        self.assertEqual(len(doc_res['detalle_asistencias']), 3)
+
+        # Validar tipo_clase formateado en el detalle
+        tipos = [a['tipo_clase'] for a in doc_res['detalle_asistencias']]
+        self.assertIn('Presencial', tipos)
+        self.assertIn('Virtual Sincrónica', tipos)
+        self.assertIn('Asincrónica', tipos)
+
+    def test_desnormalizado_asistencias(self):
+        from reportes.services import generar_datos_desnormalizados_asistencias
+
+        RegistroAsistencia.objects.create(
+            docente=self.docente, slot_horario=self.slot, fecha=date(2026, 5, 4),
+            anio=2026, tipo_clase='virtual_sincronica', creado_por=self.secretario
+        )
+
+        filas_asist = generar_datos_desnormalizados_asistencias(desde=date(2026, 5, 1), hasta=date(2026, 5, 31))
+        self.assertEqual(len(filas_asist), 1)
+        fila = filas_asist[0]
+        self.assertEqual(fila['docente'], 'Maria Gomez')
+        self.assertEqual(fila['tipo_clase'], 'Virtual Sincrónica')
+        self.assertEqual(fila['materia'], 'Álgebra')
+        self.assertEqual(fila['carreras'], 'Tecnicatura en Programación')
+        self.assertIn('hora_entrada', fila)
+        self.assertIn('hora_salida', fila)
+
+    def test_excel_generado_multiples_hojas(self):
+        from reportes.services import generar_excel_ausencias, generar_datos_desnormalizados, generar_datos_desnormalizados_asistencias
+
+        RegistroAsistencia.objects.create(
+            docente=self.docente, slot_horario=self.slot, fecha=date(2026, 5, 4),
+            anio=2026, tipo_clase='asincronica', creado_por=self.secretario
+        )
+
+        datos_in = generar_datos_desnormalizados(desde=date(2026, 5, 1), hasta=date(2026, 5, 31))
+        datos_as = generar_datos_desnormalizados_asistencias(desde=date(2026, 5, 1), hasta=date(2026, 5, 31))
+
+        wb = generar_excel_ausencias(datos_in, desde=date(2026, 5, 1), hasta=date(2026, 5, 31), institucion=None, datos_asistencias=datos_as)
+
+        nombres_hojas = wb.sheetnames
+        self.assertIn("Asistencias", nombres_hojas)
+        self.assertIn("Inasistencias", nombres_hojas)
+        self.assertIn("Resumen Consolidado", nombres_hojas)
+        self.assertIn("Info Reporte", nombres_hojas)
+
+        ws_asist = wb["Asistencias"]
+        # Fila 1 cabecera: columna 3 es "Tipo de Clase"
+        self.assertEqual(ws_asist.cell(row=1, column=3).value, "Tipo de Clase")
+        # Fila 2 datos: valor es "Asincrónica"
+        self.assertEqual(ws_asist.cell(row=2, column=3).value, "Asincrónica")
+
+    def test_endpoint_ausencias_json_incluye_tipos_de_clase(self):
+        self.client.login(username='secretario_tc', password='password123')
+
+        RegistroAsistencia.objects.create(
+            docente=self.docente, slot_horario=self.slot, fecha=date(2026, 5, 4),
+            anio=2026, tipo_clase='virtual_sincronica', creado_por=self.secretario
+        )
+
+        response = self.client.get('/api/reportes/ausencias?desde=2026-05-01&hasta=2026-05-31&agrupar_por=docente')
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        fila = data['resultados'][0]
+        self.assertEqual(fila['total_asistencias'], 1)
+        self.assertEqual(fila['asistencias_virtuales_sincronicas'], 1)
+        self.assertEqual(fila['asistencias_presenciales'], 0)
+        self.assertEqual(fila['asistencias_asincronicas'], 0)
+        self.assertEqual(len(fila['detalle_asistencias']), 1)
+        self.assertEqual(fila['detalle_asistencias'][0]['tipo_clase'], 'Virtual Sincrónica')
+
+    def test_endpoint_exportar_excel_exitoso(self):
+        self.client.login(username='secretario_tc', password='password123')
+
+        response = self.client.get('/api/reportes/exportar?desde=2026-05-01&hasta=2026-05-31')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response['Content-Type'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        self.assertIn('.xlsx', response['Content-Disposition'])
+
+

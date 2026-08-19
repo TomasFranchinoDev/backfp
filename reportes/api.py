@@ -5,7 +5,12 @@ from io import BytesIO
 from core.security import secretario_auth
 from core.ratelimit import ratelimit_heavy_ops
 from .schemas import ReporteMensualOut
-from .services import calcular_ausencias_dinamicas, generar_datos_desnormalizados, generar_excel_ausencias
+from .services import (
+    calcular_ausencias_dinamicas,
+    generar_datos_desnormalizados,
+    generar_datos_desnormalizados_asistencias,
+    generar_excel_ausencias,
+)
 
 router = Router(tags=["Reportes y Auditoría"], auth=secretario_auth)
 
@@ -13,8 +18,9 @@ router = Router(tags=["Reportes y Auditoría"], auth=secretario_auth)
 @ratelimit_heavy_ops
 def previsualizar_reporte_ausencias(request, desde: date, hasta: date, institucion: str = None, agrupar_por: str = "docente"):
     """
-    Devuelve un JSON con el cálculo dinámico de presencias y ausencias del mes.
-    Ideal para mostrar una tabla de resultados en el frontend antes de exportar.
+    Devuelve un JSON con el cálculo dinámico de asistencias y ausencias del período.
+    Incluye discriminación de tipo de clase (Presencial, Virtual Sincrónica, Asincrónica)
+    y el detalle clase por clase.
     """
     data_calculada = calcular_ausencias_dinamicas(desde, hasta, institucion, agrupar_por)
     
@@ -29,8 +35,12 @@ def previsualizar_reporte_ausencias(request, desde: date, hasta: date, instituci
             "nombre": datos['nombre'],
             "total_clases_esperadas": datos['esperadas'],
             "total_asistencias": datos['asistencias'],
+            "asistencias_presenciales": datos.get('asistencias_presenciales', 0),
+            "asistencias_virtuales_sincronicas": datos.get('asistencias_virtuales_sincronicas', 0),
+            "asistencias_asincronicas": datos.get('asistencias_asincronicas', 0),
             "total_ausencias": len(ausencias_reales),
-            "detalle_ausencias": datos['ausencias']
+            "detalle_ausencias": datos['ausencias'],
+            "detalle_asistencias": datos.get('detalle_asistencias', []),
         })
         
     return {
@@ -45,13 +55,19 @@ def previsualizar_reporte_ausencias(request, desde: date, hasta: date, instituci
 @ratelimit_heavy_ops
 def descargar_excel_ausencias(request, desde: date, hasta: date, institucion: str = "Ambas"):
     """
-    Genera un Excel desnormalizado con una fila por cada inasistencia y toda la información cruzada.
-    No depende de agrupamiento — siempre exporta el detalle completo (14 columnas).
+    Genera un Excel completo con 4 hojas (Asistencias con Tipo de Clase, Inasistencias, Resumen e Info Reporte).
     """
     filtro_inst = institucion if institucion != "Ambas" else None
-    datos = generar_datos_desnormalizados(desde, hasta, filtro_inst)
+    datos_inasistencias = generar_datos_desnormalizados(desde, hasta, filtro_inst)
+    datos_asistencias = generar_datos_desnormalizados_asistencias(desde, hasta, filtro_inst)
     
-    wb = generar_excel_ausencias(datos, desde, hasta, filtro_inst)
+    wb = generar_excel_ausencias(
+        datos_desnormalizados=datos_inasistencias,
+        desde=desde,
+        hasta=hasta,
+        institucion=filtro_inst,
+        datos_asistencias=datos_asistencias,
+    )
     
     # Guardar archivo en memoria
     buffer = BytesIO()
@@ -63,5 +79,5 @@ def descargar_excel_ausencias(request, desde: date, hasta: date, institucion: st
         buffer.read(), 
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
-    response['Content-Disposition'] = f'attachment; filename="Reporte_Inasistencias_{inst_label}_{desde.strftime("%Y%m%d")}_{hasta.strftime("%Y%m%d")}.xlsx"'
+    response['Content-Disposition'] = f'attachment; filename="Reporte_Asistencia_{inst_label}_{desde.strftime("%Y%m%d")}_{hasta.strftime("%Y%m%d")}.xlsx"'
     return response
