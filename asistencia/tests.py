@@ -870,3 +870,129 @@ class EmergenciasHistorialTests(TestCase):
         self.assertEqual(data[0]["nota_secretaria"], "No corresponde justificar")
         self.assertEqual(data[0]["revisado_por_nombre"], "Juan Perez")
         self.assertIsNotNone(data[0]["revisado_en"])
+
+
+class FichajeSolidarioModalidadesTests(TestCase):
+    """Tests para verificar que clases asincrónicas, virtuales sincrónicas y emergencias disparen fichaje solidario."""
+
+    def setUp(self):
+        # Secretario
+        self.secretario_user = Usuario.objects.create_user(username="sec_test", email="sec@test.com", password="password", first_name="Secretario", last_name="Admin")
+        from usuarios.models import Secretario
+        self.secretario = Secretario.objects.create(user=self.secretario_user)
+
+        # Docente 1 (Titular)
+        self.user1 = Usuario.objects.create_user(username="doc1_test", email="doc1@test.com", password="password", first_name="Carlos", last_name="Titular")
+        self.docente1 = Docente.objects.create(user=self.user1, activo=True)
+
+        # Docente 2 (Adjunto/Colega)
+        self.user2 = Usuario.objects.create_user(username="doc2_test", email="doc2@test.com", password="password", first_name="Laura", last_name="Adjunta")
+        self.docente2 = Docente.objects.create(user=self.user2, activo=True)
+
+        # Materia y Slot
+        self.materia = Materia.objects.create(codigo_siu="PROG101", nombre="Programación Avanzada", anio=2026)
+        self.slot = SlotHorario.objects.create(
+            materia=self.materia,
+            dia_semana=0, # Lunes
+            hora_inicio=time(18, 0),
+            hora_fin=time(20, 0),
+            valido_desde=timezone.make_aware(datetime(2026, 1, 1))
+        )
+
+        # Asignaciones a ambos docentes
+        self.asig1 = AsignacionDocente.objects.create(
+            docente=self.docente1, materia=self.materia, rol="titular",
+            activa=True, fecha_inicio=date(2026, 5, 1)
+        )
+        self.asig2 = AsignacionDocente.objects.create(
+            docente=self.docente2, materia=self.materia, rol="adjunto",
+            activa=True, fecha_inicio=date(2026, 5, 1)
+        )
+
+    def test_declarar_asincronica_dispara_fichaje_solidario(self):
+        from asistencia.services import declarar_clase_asincronica
+
+        # Lunes 11 de Mayo de 2026
+        fecha_test = date(2026, 5, 11)
+        with patch('django.utils.timezone.localdate', return_value=fecha_test):
+            success, msg = declarar_clase_asincronica(
+                docente_id=self.docente1.id,
+                slot_id=self.slot.id,
+                fecha_dictado=fecha_test,
+                nota="TP asincrónico publicado en Classroom"
+            )
+            self.assertTrue(success)
+
+            # Verificar que AMBOS docentes tengan registro asincrónico
+            reg1 = RegistroAsistencia.objects.filter(docente=self.docente1, fecha=fecha_test).first()
+            reg2 = RegistroAsistencia.objects.filter(docente=self.docente2, fecha=fecha_test).first()
+
+            self.assertIsNotNone(reg1)
+            self.assertIsNotNone(reg2)
+
+            self.assertEqual(reg1.tipo_clase, TipoClase.ASINCRONICA)
+            self.assertEqual(reg1.creado_por, self.user1)
+
+            self.assertEqual(reg2.tipo_clase, TipoClase.ASINCRONICA)
+            self.assertEqual(reg2.creado_por, self.user1) # Autor: Docente 1 que declaró la clase
+
+    def test_resolver_emergencia_dispara_fichaje_solidario(self):
+        from asistencia.services import resolver_emergencia
+
+        fecha_test = date(2026, 5, 11)
+        solicitud = SolicitudEmergencia.objects.create(
+            docente=self.docente1,
+            slot_horario=self.slot,
+            fecha=fecha_test,
+            nota_docente="Falla eléctrica total en el aula",
+            estado=EstadoSolicitud.PENDIENTE
+        )
+
+        exito, msg = resolver_emergencia(
+            solicitud_id=solicitud.id,
+            aprobar=True,
+            nota_secretaria="Se autoriza por corte de luz general",
+            usuario_admin=self.secretario_user
+        )
+        self.assertTrue(exito)
+
+        # Verificar que se crearon registros para ambos docentes
+        reg1 = RegistroAsistencia.objects.filter(docente=self.docente1, fecha=fecha_test).first()
+        reg2 = RegistroAsistencia.objects.filter(docente=self.docente2, fecha=fecha_test).first()
+
+        self.assertIsNotNone(reg1)
+        self.assertIsNotNone(reg2)
+
+        self.assertEqual(reg1.solicitud_emergencia_id, solicitud.id)
+        self.assertEqual(reg1.creado_por, self.secretario_user)
+
+        self.assertEqual(reg2.solicitud_emergencia_id, solicitud.id)
+        self.assertEqual(reg2.creado_por, self.secretario_user)
+
+    def test_virtual_sincronica_fichaje_solidario(self):
+        from asistencia.services import registrar_entrada
+
+        # Simular entrada virtual sincrónica un Lunes a las 18:05
+        fecha_hora = timezone.make_aware(datetime(2026, 5, 11, 18, 5, 0))
+        with patch('django.utils.timezone.localtime', return_value=fecha_hora):
+            res = registrar_entrada(
+                usuario=self.user1,
+                lat=None,
+                lon=None,
+                ip="192.168.1.50",
+                tipo_clase=TipoClase.VIRTUAL_SINCRONICA
+            )
+            self.assertTrue(res["success"])
+
+            reg1 = RegistroAsistencia.objects.filter(docente=self.docente1, fecha=date(2026, 5, 11)).first()
+            reg2 = RegistroAsistencia.objects.filter(docente=self.docente2, fecha=date(2026, 5, 11)).first()
+
+            self.assertIsNotNone(reg1)
+            self.assertIsNotNone(reg2)
+
+            self.assertEqual(reg1.tipo_clase, TipoClase.VIRTUAL_SINCRONICA)
+            self.assertEqual(reg1.creado_por, self.user1)
+
+            self.assertEqual(reg2.tipo_clase, TipoClase.VIRTUAL_SINCRONICA)
+            self.assertEqual(reg2.creado_por, self.user1)
+

@@ -483,4 +483,43 @@ class TipoClaseReportesTestCase(TestCase):
         )
         self.assertIn('.xlsx', response['Content-Disposition'])
 
+    def test_registrado_por_fichaje_solidario_y_sinceridad_horaria(self):
+        # Crear colega Profesor 3
+        user_prof3 = get_user_model().objects.create_user(
+            username='30111222', email='prof3@ices.edu.ar',
+            first_name='Carlos', last_name='DocenteTres', password='password123'
+        )
+
+        # Caso 1: Profesor 3 le ficha la asistencia a Maria Gomez (Fichaje Solidario sin modificar)
+        reg_solidario = RegistroAsistencia.objects.create(
+            docente=self.docente, slot_horario=self.slot, fecha=date(2026, 5, 4),
+            anio=2026, tipo_clase='presencial', creado_por=user_prof3
+        )
+
+        res = calcular_ausencias_dinamicas(desde=date(2026, 5, 1), hasta=date(2026, 5, 31), agrupar_por='docente')
+        detalles = res[self.docente.id]['detalle_asistencias']
+        self.assertEqual(len(detalles), 1)
+        self.assertEqual(detalles[0]['registrado_por'], 'Carlos DocenteTres')
+
+        # Caso 2: Maria Gomez luego hace sinceridad horaria (modificado_por = user_docente)
+        reg_solidario.modificado_por = self.user_docente
+        reg_solidario.save()
+
+        res2 = calcular_ausencias_dinamicas(desde=date(2026, 5, 1), hasta=date(2026, 5, 31), agrupar_por='docente')
+        detalles2 = res2[self.docente.id]['detalle_asistencias']
+        self.assertEqual(detalles2[0]['registrado_por'], 'Maria Gomez')
+
+        # Verificar que el desnormalizado y el Excel también contengan "Maria Gomez"
+        from reportes.services import generar_datos_desnormalizados_asistencias, generar_excel_ausencias, generar_datos_desnormalizados
+        datos_as = generar_datos_desnormalizados_asistencias(desde=date(2026, 5, 1), hasta=date(2026, 5, 31))
+        self.assertEqual(datos_as[0]['registrado_por'], 'Maria Gomez')
+
+        datos_in = generar_datos_desnormalizados(desde=date(2026, 5, 1), hasta=date(2026, 5, 31))
+        wb = generar_excel_ausencias(datos_in, desde=date(2026, 5, 1), hasta=date(2026, 5, 31), institucion=None, datos_asistencias=datos_as)
+        ws_asist = wb["Asistencias"]
+        # Columna 17 es "Registrado por"
+        self.assertEqual(ws_asist.cell(row=1, column=17).value, "Registrado por")
+        self.assertEqual(ws_asist.cell(row=2, column=17).value, "Maria Gomez")
+
+
 

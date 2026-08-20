@@ -71,8 +71,14 @@ def registrar_entrada(usuario, lat: float, lon: float, ip: str, tipo_clase: str)
         ubicacion_ok = True
 
     # 3. Flujo de Fichaje Solidario
-    # Buscamos a TODOS los docentes asignados a esta materia que estén activos
-    asignaciones = AsignacionDocente.objects.filter(materia=slot_vigente.materia, activa=True)
+    # Buscamos a TODOS los docentes asignados a esta materia que estén activos en la fecha actual
+    asignaciones = AsignacionDocente.objects.filter(
+        materia=slot_vigente.materia,
+        activa=True,
+        fecha_inicio__lte=ahora.date()
+    ).filter(
+        Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=ahora.date())
+    )
     
     estado_final_flujo = "exito"
     mensaje_final = f"Entrada registrada exitosamente para {materia_nombre}."
@@ -253,7 +259,8 @@ def procesar_solicitud_emergencia(docente_id: int, slot_id: Optional[int], nota:
 
 def resolver_emergencia(solicitud_id: int, aprobar: bool, nota_secretaria: str, usuario_admin):
     """
-    La Secretaría aprueba o rechaza. Si aprueba, genera la asistencia perfecta automáticamente.
+    La Secretaría aprueba o rechaza. Si aprueba, genera la asistencia y dispara el fichaje solidario
+    para todos los docentes asignados a la materia.
     """
     solicitud = SolicitudEmergencia.objects.filter(id=solicitud_id, estado=EstadoSolicitud.PENDIENTE).first()
     
@@ -265,7 +272,7 @@ def resolver_emergencia(solicitud_id: int, aprobar: bool, nota_secretaria: str, 
     if aprobar:
         solicitud.estado = EstadoSolicitud.APROBADA
         
-        # --- LA GENERACIÓN MÁGICA DE ASISTENCIA ---
+        # --- LA GENERACIÓN DE ASISTENCIA CON FICHAJE SOLIDARIO ---
         slots_to_process = []
         if solicitud.slot_horario:
             slots_to_process.append(solicitud.slot_horario)
@@ -288,7 +295,7 @@ def resolver_emergencia(solicitud_id: int, aprobar: bool, nota_secretaria: str, 
             slots_to_process = [s for s in slots_to_process_qs if s.is_valid_at(solicitud.fecha)]
 
         for slot in slots_to_process:
-            # Verificar si ya existe registro de asistencia para evitar duplicados
+            # 1. Asistencia para el docente que reportó la emergencia
             exists = RegistroAsistencia.objects.filter(
                 docente_id=solicitud.docente_id,
                 slot_horario=slot,
@@ -303,13 +310,45 @@ def resolver_emergencia(solicitud_id: int, aprobar: bool, nota_secretaria: str, 
                     anio=solicitud.fecha.year,
                     tipo_clase=TipoClase.PRESENCIAL, # Asumimos presencial
                     
-                    # Simulamos que entró y salió a la hora perfecta del slot
+                    # Simulamos que entró y salió a la hora del slot
                     hora_entrada=timezone.make_aware(timezone.datetime.combine(solicitud.fecha, slot.hora_inicio)),
                     hora_salida=timezone.make_aware(timezone.datetime.combine(solicitud.fecha, slot.hora_fin)),
                     ubicacion_validada=True, # Secretaría avala
                     solicitud_emergencia=solicitud, # Vinculamos el registro con la emergencia para auditoría
+                    creado_por=usuario_admin,
                     nota=f"Fichaje manual por emergencia (Autorizado por: {usuario_admin.get_full_name()})"
                 )
+
+            # 2. Fichaje Solidario para los compañeros de cátedra asignados a la misma materia
+            asignaciones_colegas = AsignacionDocente.objects.filter(
+                materia_id=slot.materia_id,
+                activa=True,
+                fecha_inicio__lte=solicitud.fecha
+            ).filter(
+                Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=solicitud.fecha)
+            ).exclude(docente_id=solicitud.docente_id).select_related('docente__user')
+
+            for asig_col in asignaciones_colegas:
+                exists_col = RegistroAsistencia.objects.filter(
+                    docente_id=asig_col.docente_id,
+                    slot_horario=slot,
+                    fecha=solicitud.fecha
+                ).exists()
+
+                if not exists_col:
+                    RegistroAsistencia.objects.create(
+                        docente_id=asig_col.docente_id,
+                        slot_horario=slot,
+                        fecha=solicitud.fecha,
+                        anio=solicitud.fecha.year,
+                        tipo_clase=TipoClase.PRESENCIAL,
+                        hora_entrada=timezone.make_aware(timezone.datetime.combine(solicitud.fecha, slot.hora_inicio)),
+                        hora_salida=timezone.make_aware(timezone.datetime.combine(solicitud.fecha, slot.hora_fin)),
+                        ubicacion_validada=None, # Solidario provisional
+                        solicitud_emergencia=solicitud,
+                        creado_por=usuario_admin,
+                        nota=f"Fichaje solidario por emergencia aprobada de {solicitud.docente.user.get_full_name()} (Autorizado por: {usuario_admin.get_full_name()})"
+                    )
     else:
         solicitud.estado = EstadoSolicitud.RECHAZADA
 
@@ -323,7 +362,8 @@ def resolver_emergencia(solicitud_id: int, aprobar: bool, nota_secretaria: str, 
 
 def declarar_clase_asincronica(docente_id: int, slot_id: int, fecha_dictado: date, nota: str):
     """
-    Registra una clase asincrónica basada en la presunción de verdad del docente.
+    Registra una clase asincrónica basada en la presunción de verdad del docente
+    y dispara el fichaje solidario para todos los docentes asignados a la cátedra.
     """
     # 1. Validar que la fecha esté en el rango permitido (hasta 7 días antes o después)
     hoy = timezone.localdate()
@@ -344,13 +384,15 @@ def declarar_clase_asincronica(docente_id: int, slot_id: int, fecha_dictado: dat
         return False, "El día de la semana seleccionado no coincide con la cursada oficial de la materia."
 
     # 3. Validar que el docente esté asignado a esa materia en esa fecha
-    asignacion_activa = asignaciones.models.AsignacionDocente.objects.filter(
+    asignacion_activa = AsignacionDocente.objects.filter(
         docente_id=docente_id,
         materia_id=slot.materia_id,
         activa=True,
         fecha_inicio__lte=fecha_dictado,
         materia__activa=True,
-    ).first()
+    ).filter(
+        Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=fecha_dictado)
+    ).select_related('docente__user').first()
 
     if not asignacion_activa:
         return False, "No tenés una asignación activa para esta materia en la fecha indicada."
@@ -358,6 +400,8 @@ def declarar_clase_asincronica(docente_id: int, slot_id: int, fecha_dictado: dat
     # 4. Validar duplicados (Que no haya fichado presencial o asincrónico antes ese mismo día)
     if RegistroAsistencia.objects.filter(docente_id=docente_id, slot_horario_id=slot_id, fecha=fecha_dictado).exists():
         return False, "Ya existe un registro de asistencia para esta materia en la fecha indicada."
+
+    docente_declarante = asignacion_activa.docente
 
     # 5. Generar el registro directo (RN-03: Asistencia automática sin validación manual)
     RegistroAsistencia.objects.create(
@@ -370,7 +414,39 @@ def declarar_clase_asincronica(docente_id: int, slot_id: int, fecha_dictado: dat
         hora_entrada=None, 
         hora_salida=None,
         ubicacion_validada=None,
+        creado_por=docente_declarante.user,
         nota=f"Modalidad Asincrónica declarada vía web. Nota: {nota}"
     )
 
-    return True, f"Clase asincrónica declarada exitosamente para {slot.materia.nombre}."
+    # 6. Fichaje Solidario para los compañeros de cátedra
+    asignaciones_colegas = AsignacionDocente.objects.filter(
+        materia_id=slot.materia_id,
+        activa=True,
+        fecha_inicio__lte=fecha_dictado,
+        materia__activa=True,
+    ).filter(
+        Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=fecha_dictado)
+    ).exclude(docente_id=docente_id).select_related('docente__user')
+
+    for asig_col in asignaciones_colegas:
+        exists_col = RegistroAsistencia.objects.filter(
+            docente_id=asig_col.docente_id,
+            slot_horario_id=slot_id,
+            fecha=fecha_dictado
+        ).exists()
+
+        if not exists_col:
+            RegistroAsistencia.objects.create(
+                docente_id=asig_col.docente_id,
+                slot_horario_id=slot_id,
+                fecha=fecha_dictado,
+                anio=fecha_dictado.year,
+                tipo_clase=TipoClase.ASINCRONICA,
+                hora_entrada=None,
+                hora_salida=None,
+                ubicacion_validada=None,
+                creado_por=docente_declarante.user,
+                nota=f"Modalidad Asincrónica declarada por colega: {docente_declarante.user.get_full_name()}. Nota: {nota}"
+            )
+
+    return True, f"Clase asincrónica declarada exitosamente para {slot.materia.nombre}."

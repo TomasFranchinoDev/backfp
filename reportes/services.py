@@ -25,6 +25,21 @@ def format_tipo_clase(tipo: str) -> str:
     return "Presencial"
 
 
+def obtener_nombre_registrador(registro) -> str:
+    """
+    Retorna el nombre del usuario que registró o modificó la asistencia:
+    - Si existe modificado_por (ej. sinceridad horaria), retorna modificado_por.
+    - En caso contrario, retorna creado_por (ej. fichaje original o fichaje solidario por un compañero).
+    """
+    if not registro:
+        return "Sistema"
+    if registro.modificado_por:
+        return registro.modificado_por.get_full_name() or registro.modificado_por.username
+    if registro.creado_por:
+        return registro.creado_por.get_full_name() or registro.creado_por.username
+    return "Sistema"
+
+
 def calcular_ausencias_dinamicas(desde: date, hasta: date, institucion: str = None, agrupar_por: str = 'docente'):
     """
     Cruza el catálogo teórico vs los registros reales para deducir asistencias y ausencias.
@@ -38,8 +53,10 @@ def calcular_ausencias_dinamicas(desde: date, hasta: date, institucion: str = No
     eventos = EventoCalendario.objects.filter(fecha__range=[fecha_inicio, fecha_fin])
     mapa_eventos = {evento.fecha: evento.descripcion for evento in eventos}
 
-    # 2. Precargar todos los registros de asistencia del mes
-    registros = RegistroAsistencia.objects.filter(fecha__range=[fecha_inicio, fecha_fin])
+    # 2. Precargar todos los registros de asistencia del mes con sus autores
+    registros = RegistroAsistencia.objects.filter(
+        fecha__range=[fecha_inicio, fecha_fin]
+    ).select_related('creado_por', 'modificado_por')
     # Clave: (docente_id, slot_id, fecha) -> Valor: Objeto RegistroAsistencia
     mapa_asistencia = {(r.docente_id, r.slot_horario_id, r.fecha): r for r in registros}
 
@@ -164,6 +181,7 @@ def calcular_ausencias_dinamicas(desde: date, hasta: date, institucion: str = No
                             'tipo_clase': tipo_legible,
                             'hora_entrada': hora_ent,
                             'hora_salida': hora_sal,
+                            'registrado_por': obtener_nombre_registrador(registro),
                         })
                     else:
                         # Ausencia
@@ -189,7 +207,7 @@ def calcular_ausencias_dinamicas(desde: date, hasta: date, institucion: str = No
                                 'evento_calendario': None
                             })
 
-    return reporte_grupos
+    return dict(reporte_grupos)
 
 
 def generar_datos_desnormalizados(desde: date, hasta: date, institucion: str = None):
@@ -207,7 +225,7 @@ def generar_datos_desnormalizados(desde: date, hasta: date, institucion: str = N
 
     # 2. Registros de asistencia
     registros = RegistroAsistencia.objects.filter(fecha__range=[fecha_inicio, fecha_fin])
-    mapa_asistencia = {(r.docente_id, r.slot_horario_id, r.fecha): True for r in registros}
+    mapa_asistencia = {(r.docente_id, r.slot_horario_id, r.fecha) for r in registros}
 
     # 3. Asignaciones activas
     asignaciones = AsignacionDocente.objects.filter(
@@ -298,7 +316,7 @@ def generar_datos_desnormalizados(desde: date, hasta: date, institucion: str = N
 def generar_datos_desnormalizados_asistencias(desde: date, hasta: date, institucion: str = None):
     """
     Genera una lista plana de diccionarios con todas las asistencias registradas desnormalizadas.
-    Incluye la columna 'tipo_clase' ('Presencial', 'Virtual Sincrónica', 'Asincrónica').
+    Incluye la columna 'tipo_clase' ('Presencial', 'Virtual Sincrónica', 'Asincrónica') y 'registrado_por'.
     """
     fecha_inicio = desde
     fecha_fin = hasta
@@ -307,7 +325,9 @@ def generar_datos_desnormalizados_asistencias(desde: date, hasta: date, instituc
         fecha__range=[fecha_inicio, fecha_fin]
     ).select_related(
         'docente__user',
-        'slot_horario__materia'
+        'slot_horario__materia',
+        'creado_por',
+        'modificado_por'
     ).prefetch_related(
         'slot_horario__materia__carreras_asociadas__carrera',
         'docente__asignaciones'
@@ -368,6 +388,7 @@ def generar_datos_desnormalizados_asistencias(desde: date, hasta: date, instituc
             'hora_entrada': hora_ent_str,
             'hora_salida': hora_sal_str,
             'rol_docente': rol_docente,
+            'registrado_por': obtener_nombre_registrador(reg),
         })
 
     filas.sort(key=lambda f: (f['fecha'], f['docente'], f['hora_inicio']))
@@ -376,27 +397,27 @@ def generar_datos_desnormalizados_asistencias(desde: date, hasta: date, instituc
 
 def generar_excel_ausencias(datos_desnormalizados: list, desde: date, hasta: date, institucion: str, datos_asistencias: list = None):
     """
-    Genera un archivo Excel (.xlsx) completo y profesional con 4 hojas:
-    1. "Asistencias": Detalle desnormalizado con 'Tipo de Clase' (Presencial, Virtual Sincrónica, Asincrónica).
-    2. "Inasistencias": Detalle desnormalizado de ausencias y feriados.
-    3. "Resumen Consolidado": Resumen agrupado por docente con métricas discriminadas por tipo de clase.
-    4. "Info Reporte": Metadatos y parámetros del reporte generado.
+    Genera un libro Excel con 4 hojas:
+    - Hoja 1: "Asistencias" (Detalle plano de clases asistidas con Tipo de Clase y Registrado por)
+    - Hoja 2: "Inasistencias" (Detalle plano de ausencias y feriados)
+    - Hoja 3: "Resumen Consolidado" (Métricas agregadas por Docente)
+    - Hoja 4: "Info Reporte" (Metadatos, filtros y totales globales)
     """
     if datos_asistencias is None:
         datos_asistencias = generar_datos_desnormalizados_asistencias(desde, hasta, institucion)
 
     wb = Workbook()
 
-    # ── Estilos Comunes ──
-    header_fill = PatternFill(start_color="2B3A67", end_color="2B3A67", fill_type="solid")
-    header_font = Font(color="FFFFFF", bold=True, size=11)
-    date_font = Font(bold=True)
+    # ── ESTILOS GENERALES ──────────────────────────────────────────────────────
+    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    date_font = Font(name="Calibri", size=11, bold=True)
     center_align = Alignment(horizontal="center", vertical="center")
 
     # Estilos por Tipo de Clase
-    presencial_fill = PatternFill(start_color="EBF4FF", end_color="EBF4FF", fill_type="solid")
-    presencial_font = Font(color="1E3A8A", bold=True)
-    virtual_fill = PatternFill(start_color="F5F3FF", end_color="F5F3FF", fill_type="solid")
+    presencial_fill = PatternFill(start_color="E0F2FE", end_color="E0F2FE", fill_type="solid")
+    presencial_font = Font(color="0369A1", bold=True)
+    virtual_fill = PatternFill(start_color="EDE9FE", end_color="EDE9FE", fill_type="solid")
     virtual_font = Font(color="5B21B6", bold=True)
     asincronica_fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
     asincronica_font = Font(color="92400E", bold=True)
@@ -427,6 +448,7 @@ def generar_excel_ausencias(datos_desnormalizados: list, desde: date, hasta: dat
         "Hora Entrada",
         "Hora Salida",
         "Rol Docente",
+        "Registrado por",
     ]
 
     for col_num, header in enumerate(headers_asist, 1):
@@ -468,28 +490,15 @@ def generar_excel_ausencias(datos_desnormalizados: list, desde: date, hasta: dat
         ws_asist.cell(row=row_idx, column=14, value=fila['hora_entrada']).alignment = center_align
         ws_asist.cell(row=row_idx, column=15, value=fila['hora_salida']).alignment = center_align
         ws_asist.cell(row=row_idx, column=16, value=fila['rol_docente'])
+        ws_asist.cell(row=row_idx, column=17, value=fila.get('registrado_por', 'Sistema'))
 
     last_row_asist = max(len(datos_asistencias) + 1, 2)
-    ws_asist.auto_filter.ref = f"A1:P{last_row_asist}"
+    ws_asist.auto_filter.ref = f"A1:Q{last_row_asist}"
     ws_asist.freeze_panes = "A2"
 
     column_widths_asist = {
-        'A': 14,   # Fecha
-        'B': 12,   # Día
-        'C': 20,   # Tipo de Clase
-        'D': 30,   # Docente
-        'E': 14,   # DNI
-        'F': 35,   # Materia
-        'G': 20,   # Código Materia
-        'H': 14,   # Año Materia
-        'I': 35,   # Carrera(s)
-        'J': 16,   # Código Carrera
-        'K': 14,   # Institución
-        'L': 16,   # Hora Inicio Slot
-        'M': 16,   # Hora Fin Slot
-        'N': 14,   # Hora Entrada
-        'O': 14,   # Hora Salida
-        'P': 14,   # Rol Docente
+        'A': 14, 'B': 12, 'C': 20, 'D': 30, 'E': 14, 'F': 35, 'G': 20, 'H': 14,
+        'I': 35, 'J': 16, 'K': 14, 'L': 16, 'M': 16, 'N': 14, 'O': 14, 'P': 14, 'Q': 26,
     }
     for col_letter, width in column_widths_asist.items():
         ws_asist.column_dimensions[col_letter].width = width

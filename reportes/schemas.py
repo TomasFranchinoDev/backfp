@@ -20,6 +20,7 @@ class DetalleAsistenciaOut(Schema):
     tipo_clase: str
     hora_entrada: Optional[str] = None
     hora_salida: Optional[str] = None
+    registrado_por: Optional[str] = None
 
 class ResumenFilaOut(Schema):
     id: int
